@@ -1,6 +1,6 @@
 _BASE_: maskformer2_R50_bs16_90k.yaml
 MODEL:
-  WEIGHTS: "R-101.pkl"
+  WEIGHTS: "/gaemi_ws/src/mask2former/weights/cityscapes/panoptic/R-101.pkl"
   RESNETS:
     DEPTH: 101
     STEM_TYPE: "basic"  # not used
