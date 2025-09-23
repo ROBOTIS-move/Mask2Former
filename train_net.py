@@ -292,6 +292,9 @@ def setup(args):
     default_setup(cfg, args)
     # Setup logger for "mask_former" module
     setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="mask2former")
+    # record path check
+    if not os.path.exists(cfg.EARLY_STOP.JSON_PATH):
+        raise FileNotFoundError(f"{cfg.EARLY_STOP.JSON_PATH} does not exist!")
     return cfg
 
 
