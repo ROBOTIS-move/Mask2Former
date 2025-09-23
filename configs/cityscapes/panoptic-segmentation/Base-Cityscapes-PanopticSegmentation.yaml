@@ -17,6 +17,7 @@ DATASETS:
   TRAIN: ("cityscapes_fine_panoptic_train",)
   TEST: ("cityscapes_fine_panoptic_val",)
 SOLVER:
+  CHECKPOINT_PERIOD: 1000  # save a checkpoint after every this number of iterations
   IMS_PER_BATCH: 16
   BASE_LR: 0.0001
   MAX_ITER: 50000
@@ -59,3 +60,9 @@ DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
   NUM_WORKERS: 4
 VERSION: 2
+EARLY_STOP:
+  ENABLED: True
+  PATIENCE: 5
+  TARGET_INDICATOR: "sem_seg"
+  TARGET_METRIC: "iIoU"
+  JSON_PATH: "./output"
