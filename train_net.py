@@ -57,6 +57,7 @@ from mask2former import (
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
 )
+from mask2former.data.datasets.register_my_custom_dataset import register_my_custom_dataset
 
 
 class Trainer(DefaultTrainer):
@@ -297,6 +298,13 @@ def setup(args):
 
 def main(args):
     cfg = setup(args)
+
+    # Register custom datasets
+    # The actual registration logic now uses class names from the config
+    if "my_custom_train" in cfg.DATASETS.TRAIN:
+        register_my_custom_dataset("my_custom_train", cfg, "path/to/your/training/jsons")
+    if "my_custom_val" in cfg.DATASETS.TEST:
+        register_my_custom_dataset("my_custom_val", cfg, "path/to/your/validation/jsons")
 
     if args.eval_only:
         model = Trainer.build_model(cfg)
