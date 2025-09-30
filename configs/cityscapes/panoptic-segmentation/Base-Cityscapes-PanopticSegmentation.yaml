@@ -17,9 +17,10 @@ DATASETS:
   TRAIN: ("cityscapes_fine_panoptic_train",)
   TEST: ("cityscapes_fine_panoptic_val",)
 SOLVER:
+  CHECKPOINT_PERIOD: 2000  # save a checkpoint after every this number of iterations
   IMS_PER_BATCH: 16
   BASE_LR: 0.0001
-  MAX_ITER: 90000
+  MAX_ITER: 50000
   WARMUP_FACTOR: 1.0
   WARMUP_ITERS: 0
   WEIGHT_DECAY: 0.05
@@ -49,7 +50,7 @@ INPUT:
   FORMAT: "RGB"
   DATASET_MAPPER_NAME: "mask_former_panoptic"
 TEST:
-  EVAL_PERIOD: 5000
+  EVAL_PERIOD: 500
   AUG:
     ENABLED: False
     MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
@@ -57,5 +58,12 @@ TEST:
     FLIP: True
 DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
-  NUM_WORKERS: 2
+  NUM_WORKERS: 4
 VERSION: 2
+EARLY_STOP:
+  ENABLED: True
+  PATIENCE: 5
+  ITER_MINIMUM_RATIO: 0.7
+  TARGET_INDICATOR: "sem_seg"
+  TARGET_METRIC: "iIoU"
+  JSON_PATH: "./output"
