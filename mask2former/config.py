@@ -112,3 +112,12 @@ def add_maskformer2_config(cfg):
     # Importance sampling parameter for PointRend point sampling during training. Parametr `beta` in
     # the original paper.
     cfg.MODEL.MASK_FORMER.IMPORTANCE_SAMPLE_RATIO = 0.75
+
+    # Early stopping config
+    cfg.EARLY_STOP = CN()
+    cfg.EARLY_STOP.ENABLED = True
+    cfg.EARLY_STOP.PATIENCE = 5
+    cfg.EARLY_STOP.ITER_MINIMUM_RATIO = 0.7
+    cfg.EARLY_STOP.TARGET_INDICATOR = "sem_seg"
+    cfg.EARLY_STOP.TARGET_METRIC = "iIoU"
+    cfg.EARLY_STOP.JSON_PATH = "./output"

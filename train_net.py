@@ -292,6 +292,9 @@ def setup(args):
     default_setup(cfg, args)
     # Setup logger for "mask_former" module
     setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="mask2former")
+    # record path check
+    if cfg.EARLY_STOP.ENABLED:
+        os.makedirs(cfg.EARLY_STOP.JSON_PATH, exist_ok=True)
     return cfg
 
 
