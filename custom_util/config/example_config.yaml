@@ -2,6 +2,7 @@ gaemi_GT_data:
   dataset_path: /path/to/dataset
   service_area: service_area_name
   split_ratio:
-    train: 0.8
+    train: 0.7
     val: 0.2
+    test: 0.1
   json_record_path: /path/to/your/trained/record.json
