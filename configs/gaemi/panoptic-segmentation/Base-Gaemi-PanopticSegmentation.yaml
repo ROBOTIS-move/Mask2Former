@@ -14,22 +14,52 @@ MODEL:
     NORM: "SyncBN"  # use syncbn for gaemi dataset
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  TRAIN: ("my_custom_train",)
-  TEST: ("my_custom_val",)
+  DATA_DIR_PATH: "/mnt/NAS3/GT/DrivingAreaSegmentation"
+  TRAIN: ("gaemi_train",)
+  TRAIN_JSON_PATH: "/mnt/NAS3/auto_labeling/record_train.json"
+  TEST: ("gaemi_val",)
+  TEST_JSON_PATH: "/mnt/NAS3/auto_labeling/record_val.json"
+  # If you want to use specific service areas, set them here.
+  # Otherwise, use all areas by leaving the list empty.
+  TARGET_SERVICE_AREAS: []
+  # If you change the class names, should be changed also class number in MODEL.SEM_SEG_HEAD.NUM_CLASSES(R50_bs16_90k_gaemi.yaml)
   # 4-generation
   CLASS_NAMES: [
     'runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
     'speed-bump', 'manhole', 'terrain', 'vegetation', 'poll', 'pedestrian',
     'tree', 'vehicle', 'dynamic', 'static', 'void',
   ]
-  # 5-generationZ
+  STUFF_CLASSES: ['runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
+    'speed-bump', 'manhole', 'terrain', 'vegetation','tree', 'static',]
+  THING_CLASSES: ['poll', 'pedestrian','vehicle', 'dynamic',]
+  # 5-generation
   # CLASS_NAMES: [
   #   'runway', 'road', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
   #   'speed-bump', 'terrain', 'vegetation', 'sky', 'pole', 'pole-group',
   #   'pedestrian', 'traffic-sign', 'traffic-light-front', 'traffic-light-back',
   #   'fence', 'vehicle', 'dynamic', 'static', 'void', 'forbidden-area',
   # ]
+  # STUFF_CLASSES: ['runway', 'road', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
+  #   'speed-bump', 'terrain', 'vegetation', 'sky', 'traffic-sign', 'traffic-light-front', 'traffic-light-back',
+  #   'fence', 'static',]
+  # THING_CLASSES: ['pole', 'pole-group', 'pedestrian', 'vehicle', 'dynamic',]
+  remap_flag: True # 4 generation is True, 5 generation is False
+  convert_classes_mapping:
+    - ["pattern-block", "runway"]
+    - ["deck", "runway"]
+    - ["drain", "curb"]
+    - ["cement", "road"]
+    - ["asphalt", "road"]
+    - ["non-pattern-block", "terrain"]
+    - ["sand", "terrain"]
+    - ["grass", "terrain"]
+    - ["pebble", "terrain"]
+    - ["wall", "static"]
+    - ["building", "static"]
+    - ["animal", "dynamic"]
+    - ["sky", "void"]
 SOLVER:
+  CHECKPOINT_PERIOD: 2000  # save a checkpoint after every this number of iterations
   IMS_PER_BATCH: 16
   BASE_LR: 0.0001
   MAX_ITER: 90000
@@ -60,9 +90,9 @@ INPUT:
   COLOR_AUG_SSD: True
   SIZE_DIVISIBILITY: -1
   FORMAT: "RGB"
-  DATASET_MAPPER_NAME: "mask_former_panoptic"
+  DATASET_MAPPER_NAME: "mask_former_panoptic"  # 데이터 전처리 방식
 TEST:
-  EVAL_PERIOD: 5000
+  EVAL_PERIOD: 500
   AUG:
     ENABLED: False
     MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
@@ -72,4 +102,10 @@ DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
   NUM_WORKERS: 2
 VERSION: 2
-OUTPUT_DIR: "./saver/gaemi"
+EARLY_STOP:
+  ENABLED: True
+  PATIENCE: 5
+  ITER_MINIMUM_RATIO: 0.7
+  TARGET_INDICATOR: "sem_seg"
+  TARGET_METRIC: "iIoU"
+  JSON_PATH: "./output"
