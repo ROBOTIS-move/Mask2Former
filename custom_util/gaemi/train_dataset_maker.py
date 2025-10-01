@@ -16,13 +16,6 @@ class DatasetMaker:
         self.existing_val_data = []
         self.existing_test_data = []
 
-        # Set base paths for security checks
-        self.allowed_base_paths = [
-            os.path.dirname(base_path),
-            os.path.dirname(os.path.dirname(base_path)),
-            self.gaemi_config.get('dataset_path', ''),
-        ]
-
         logging.basicConfig(
             level=logging.INFO,
             format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s'
@@ -51,16 +44,44 @@ class DatasetMaker:
         self._save_record_json(train_data_list, val_data_list, test_data_list)
 
     def _get_existing_data_lists(self):
-        record_path = self.gaemi_config.get('json_record_path', '')
+        record_path = self.gaemi_config.get('record_path', '')
+        record_file_name = self.gaemi_config.get('record_file_name', 'record')
         service_area = self.gaemi_config.get('service_area', '')
 
-        if os.path.exists(record_path):
-            record = self._read_json(record_path)
-            existing_train = record.get('train', {}).get(service_area, [])
-            existing_val = record.get('val', {}).get(service_area, [])
-            existing_test = record.get('test', {}).get(service_area, [])
-            return existing_train, existing_val, existing_test
-        return [], [], []
+        # Create file paths for each split
+        train_file_path = os.path.join(record_path, f'{record_file_name}_train.json')
+        val_file_path = os.path.join(record_path, f'{record_file_name}_val.json')
+        test_file_path = os.path.join(record_path, f'{record_file_name}_test.json')
+
+        existing_train = []
+        existing_val = []
+        existing_test = []
+
+        # Read train data
+        if os.path.exists(train_file_path):
+            try:
+                train_record = self._read_json(train_file_path)
+                existing_train = train_record.get(service_area, [])
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                self.logger.warning(f'Failed to read train record: {e}')
+
+        # Read val data
+        if os.path.exists(val_file_path):
+            try:
+                val_record = self._read_json(val_file_path)
+                existing_val = val_record.get(service_area, [])
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                self.logger.warning(f'Failed to read val record: {e}')
+
+        # Read test data
+        if os.path.exists(test_file_path):
+            try:
+                test_record = self._read_json(test_file_path)
+                existing_test = test_record.get(service_area, [])
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                self.logger.warning(f'Failed to read test record: {e}')
+
+        return existing_train, existing_val, existing_test
 
     def _split_dataset(self):
         dataset_path = self.gaemi_config.get('dataset_path', '')
@@ -107,55 +128,59 @@ class DatasetMaker:
 
         return final_train_data, final_val_data, final_test_data
 
-    def _is_path_allowed(self, path):
-        try:
-            real_path = os.path.realpath(path)
-            for allowed_path in self.allowed_base_paths:
-                if allowed_path and real_path.startswith(os.path.realpath(allowed_path)):
-                    return True
-            return False
-        except (OSError, ValueError):
-            return False
-
     def _save_record_json(self, train_data_list, val_data_list, test_data_list):
-        record_path = self.gaemi_config.get('json_record_path', '')
+        record_path = self.gaemi_config.get('record_path', '')
+        record_file_name = self.gaemi_config.get('record_file_name', 'record')
         service_area = self.gaemi_config.get('service_area', '')
 
-        # Check if record path is within allowed directories
-        if not self._is_path_allowed(record_path):
-            raise PermissionError(f'Access denied: {record_path} is outside allowed directories')
+        # Create directory if it doesn't exist
+        if not os.path.exists(record_path):
+            if not self._is_path_allowed(record_path):
+                raise PermissionError(f'Access denied: Cannot create directory {record_path}')
+            os.makedirs(record_path, exist_ok=True)
 
-        # Check if record file exists
-        if os.path.exists(record_path):
+        # Create file paths for each split
+        train_file_path = os.path.join(record_path, f'{record_file_name}_train.json')
+        val_file_path = os.path.join(record_path, f'{record_file_name}_val.json')
+        test_file_path = os.path.join(record_path, f'{record_file_name}_test.json')
+
+        # Save train data
+        train_record = {}
+        if os.path.exists(train_file_path):
             try:
-                record = self._read_json(record_path)
-                # if keys missing, initialize them
-                for key in ['train', 'val', 'test']:
-                    if key not in record:
-                        record[key] = {}
+                train_record = self._read_json(train_file_path)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.logger.warning(f'Failed to read existing record: {e}. Creating new record.')
-                record = {'train': {}, 'val': {}, 'test': {}}
-        else:
-            # If directory doesn't exist, create it
-            record_dir = os.path.dirname(record_path)
-            if not self._is_path_allowed(record_dir):
-                raise PermissionError(f'Access denied: Cannot create directory {record_dir}')
-            os.makedirs(record_dir, exist_ok=True)
-            record = {'train': {}, 'val': {}, 'test': {}}
+                self.logger.warning(f'Failed to read existing train record: {e}. Creating new record.')
 
-        # Update data by service area
-        record['train'][service_area] = train_data_list
-        record['val'][service_area] = val_data_list
-        record['test'][service_area] = test_data_list
+        train_record[service_area] = train_data_list
+        self._write_json(train_file_path, train_record)
+
+        # Save val data
+        val_record = {}
+        if os.path.exists(val_file_path):
+            try:
+                val_record = self._read_json(val_file_path)
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                self.logger.warning(f'Failed to read existing val record: {e}. Creating new record.')
+
+        val_record[service_area] = val_data_list
+        self._write_json(val_file_path, val_record)
+
+        # Save test data
+        test_record = {}
+        if os.path.exists(test_file_path):
+            try:
+                test_record = self._read_json(test_file_path)
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                self.logger.warning(f'Failed to read existing test record: {e}. Creating new record.')
+
+        test_record[service_area] = test_data_list
+        self._write_json(test_file_path, test_record)
 
         # debug
-        # print(f'Saving record with Train: {len(train_data_list)},'
-        #       f' Val: {len(val_data_list)},'
-        #       f' Test: {len(test_data_list)}'
-        #     )
-
-        self._write_json(record_path, record)
+        # print(f'Saving records - Train: {len(train_data_list)} to {train_file_path}')
+        # print(f'                 Val: {len(val_data_list)} to {val_file_path}')
+        # print(f'                 Test: {len(test_data_list)} to {test_file_path}')
 
     def _read_json(self, path):
         try:

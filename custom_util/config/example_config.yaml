@@ -5,4 +5,6 @@ gaemi_GT_data:
     train: 0.7
     val: 0.2
     test: 0.1
-  json_record_path: /path/to/your/trained/record.json
+  record_path: /path/to/your/trained
+  # You don't need write extension. It will be added automatically.
+  record_file_name: record
