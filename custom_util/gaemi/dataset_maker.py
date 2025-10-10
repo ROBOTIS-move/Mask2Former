@@ -221,8 +221,9 @@ class DatasetMaker:
 
             category_id = label_info.get('category_id', 0)
 
-            # Get polygon points
-            polygon = shp['points']
+            # Get polygon points and flatten to single list
+            polygon = shp['points']  # [[x1, y1], [x2, y2], [x3, y3]]
+            flatten_polygon = [coord for point in polygon for coord in point]  # [x1, y1, x2, y2, x3, y3]
             # Calculate area and bbox
             area, bbox = self._calculate_area_and_bbox(polygon, image_height, image_width)
 
@@ -233,7 +234,7 @@ class DatasetMaker:
                 'label': label,
                 "id": segment_id,
                 "category_id": int(category_id),
-                'segmentation': polygon,
+                'segmentation': flatten_polygon,
                 "area": int(area),
                 "bbox": bbox,
                 "iscrowd": iscrowd
