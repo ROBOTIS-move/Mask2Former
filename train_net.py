@@ -57,7 +57,9 @@ from mask2former import (
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
 )
-from mask2former.data.datasets.register_my_custom_dataset import register_my_custom_dataset
+from mask2former.data.datasets.register_gaemi_panoptic import (
+    register_gaemi_dataset
+)
 
 
 class Trainer(DefaultTrainer):
@@ -137,6 +139,15 @@ class Trainer(DefaultTrainer):
         # LVIS
         if evaluator_type == "lvis":
             return LVISEvaluator(dataset_name, output_dir=output_folder)
+        # GAEMI
+        if evaluator_type == 'geami':
+            # Use InstanceSegEvaluator for polygon-based annotations
+            evaluator_list.append(
+                InstanceSegEvaluator(
+                    dataset_name,
+                    output_dir=output_folder,
+                )
+            )
         if len(evaluator_list) == 0:
             raise NotImplementedError(
                 "no Evaluator for the dataset {} with the type {}".format(
@@ -302,19 +313,17 @@ def setup(args):
 def main(args):
     cfg = setup(args)
 
-    # Register custom datasets
-    # The actual registration logic now uses class names from the config
-    if "my_custom_train" in cfg.DATASETS.TRAIN:
-        register_my_custom_dataset("my_custom_train", cfg, "path/to/your/training/jsons")
-    if "my_custom_val" in cfg.DATASETS.TEST:
-        register_my_custom_dataset("my_custom_val", cfg, "path/to/your/validation/jsons")
+    # Register GAEMI datasets using record JSON files
+    # cfg.DATASETS.TRAIN is a tuple like ("gaemi_train",), so we need the first element
+    register_gaemi_dataset(cfg, cfg.DATASETS.TRAIN[0], cfg.DATASETS.TRAIN_JSON_PATH)
+    register_gaemi_dataset(cfg, cfg.DATASETS.TEST[0], cfg.DATASETS.TEST_JSON_PATH)
 
     if args.eval_only:
         model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        res = Trainer.test(cfg, model)
+        res = Trainer.test(cfg, model) # res = result
         if cfg.TEST.AUG.ENABLED:
             res.update(Trainer.test_with_TTA(cfg, model))
         if comm.is_main_process():
