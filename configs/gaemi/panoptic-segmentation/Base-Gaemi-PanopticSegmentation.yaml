@@ -90,7 +90,7 @@ INPUT:
   COLOR_AUG_SSD: True
   SIZE_DIVISIBILITY: -1
   FORMAT: "RGB"
-  DATASET_MAPPER_NAME: "mask_former_panoptic"  # 데이터 전처리 방식
+  DATASET_MAPPER_NAME: "mask_former_instance"  # Use instance mapper for polygon-based data
 TEST:
   EVAL_PERIOD: 500
   AUG:
