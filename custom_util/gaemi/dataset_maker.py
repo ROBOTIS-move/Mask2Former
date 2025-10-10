@@ -11,13 +11,7 @@ from random import shuffle
 from PIL import Image
 from tqdm import tqdm
 
-# custom_util 경로를 sys.path에 추가
-current_dir = os.path.dirname(os.path.abspath(__file__))
-custom_util_path = os.path.dirname(current_dir)
-if custom_util_path not in sys.path:
-    sys.path.insert(0, custom_util_path)
-
-from config.class_config import (
+from Mask2Former.custom_util.config.class_config import (
     get_class_info,
     get_class_remap
 )
@@ -63,9 +57,9 @@ class DatasetMaker:
         self._save_img_record_json(train_data_list, type='train')
         self._save_img_record_json(val_data_list, type='val')
         self._save_img_record_json(test_data_list, type='test')
-        self._make_panoptic_annotations(train_data_list, type='train')
-        self._make_panoptic_annotations(val_data_list, type='val')
-        self._make_panoptic_annotations(test_data_list, type='test')
+        self._make_panoptic_annotations(self._get_target_file_path('train'), type='train')
+        self._make_panoptic_annotations(self._get_target_file_path('val'), type='val')
+        self._make_panoptic_annotations(self._get_target_file_path('test'), type='test')
 
     def _get_existing_data_lists(self):
         record_path = self.gaemi_config.get('record_path', '')
@@ -170,7 +164,6 @@ class DatasetMaker:
         self._write_json(file_path, record)
 
     def _make_panoptic_annotations(self, data_list, type='train'):
-        record_path = self.gaemi_config.get('record_path', '')
         gaemi_annotations = []
         for data_path in tqdm(data_list):
             # print(data_path)
@@ -196,97 +189,106 @@ class DatasetMaker:
             record['annotations'] = panoptic_annotation
             gaemi_annotations.append(record)
 
+        record_path = self.gaemi_config.get('record_path', '')
         save_path = os.path.join(record_path, f'panoptic_{type}_annotations.json')
         self._write_json(save_path, gaemi_annotations)
 
     def _calculate_annotation(self, annotation_np, json_path):
-        """JSON annotation 파일에서 각 segment의 area와 bbox를 계산"""
         json_info = self._read_json(json_path)
         image_height = json_info.get('imageHeight', annotation_np.shape[0])
         image_width = json_info.get('imageWidth', annotation_np.shape[1])
-        
+
         annotations = []
         segment_id = 1  # Start from 1
 
         for shp in json_info['shapes']:
             label = shp['label']
-            
+
             # Convert label if in remap (e.g., 'cement' -> 'road')
             converted_label = self.class_remap.get(label, label)
-            
+
             # Get label info from class_info
-            # print(self.class_info)
-            # print(type(converted_label))
             try:
                 label_info = self.class_info[converted_label]
             except KeyError:
                 self.logger.warning(f'Label "{label}" (converted: "{converted_label}") not found in class_info. Skipping.')
                 continue
-            
+
             label_id = label_info.get('id', 0)
-            category_id = label_info.get('category_id', 0)
-            
             if label_id == 0:
                 self.logger.warning(f'Label "{label}" has id=0. Skipping.')
                 continue
 
+            category_id = label_info.get('category_id', 0)
+
             # Get polygon points
             polygon = shp['points']
-            
             # Calculate area and bbox
             area, bbox = self._calculate_area_and_bbox(polygon, image_height, image_width)
-            
-            # iscrowd는 instance segmentation에서만 사용, panoptic에서는 기본 0
+
+            # iscrowd is using only instance segmentation, default is 0 for panoptic
             iscrowd = 0
 
             annotation_info = {
                 'label': label,
                 "id": segment_id,
                 "category_id": int(category_id),
+                'segmentation': polygon,
                 "area": int(area),
                 "bbox": bbox,
                 "iscrowd": iscrowd
             }
-            
+
             annotations.append(annotation_info)
             segment_id += 1
 
         return annotations
 
     def _calculate_area_and_bbox(self, polygon, image_height, image_width):
-        """Polygon 좌표로부터 area와 bbox를 계산"""
         # Convert polygon points to numpy array
         polygon_array = np.array(polygon, dtype=np.int32)
-        
+
         # Create binary mask
         mask = np.zeros((image_height, image_width), dtype=np.uint8)
         cv2.fillPoly(mask, [polygon_array], 1)
-        
+
         # Calculate area (number of pixels in the mask)
         area = np.sum(mask)
-        
+
         # Calculate bounding box
         # Horizontal projection
         hor = np.sum(mask, axis=0)
         hor_idx = np.nonzero(hor)[0]
-        
+
         if len(hor_idx) == 0:
             # Empty mask
             return 0, [0, 0, 0, 0]
-        
+
         x = hor_idx[0]
         width = hor_idx[-1] - x + 1
-        
+
         # Vertical projection
         vert = np.sum(mask, axis=1)
         vert_idx = np.nonzero(vert)[0]
         y = vert_idx[0]
         height = vert_idx[-1] - y + 1
-        
+
         bbox = [int(x), int(y), int(width), int(height)]
-        
+
         return area, bbox
 
+    def _get_target_file_path(self, target_type='train'):
+        record_path = self.gaemi_config.get('record_path', '')
+        record_file_name = self.gaemi_config.get('record_file_name', '')
+
+        target_file = os.path.join(record_path, f"{record_file_name}_{target_type}.json")
+        target_info = self._read_json(target_file)
+
+        return_list = []
+        for service_area in target_info:
+            return_list += target_info[service_area]
+
+        return return_list
 
     def _read_json(self, path):
         try:
