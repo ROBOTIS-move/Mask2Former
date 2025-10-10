@@ -1,10 +1,26 @@
 import os
+import sys
 import yaml
 import json
 import logging
+import numpy as np
+import cv2
 
 from glob import glob
 from random import shuffle
+from PIL import Image
+from tqdm import tqdm
+
+# custom_util 경로를 sys.path에 추가
+current_dir = os.path.dirname(os.path.abspath(__file__))
+custom_util_path = os.path.dirname(current_dir)
+if custom_util_path not in sys.path:
+    sys.path.insert(0, custom_util_path)
+
+from config.class_config import (
+    get_class_info,
+    get_class_remap
+)
 
 
 class DatasetMaker:
@@ -12,6 +28,9 @@ class DatasetMaker:
     def __init__(self):
         base_path = os.path.dirname(os.path.abspath(__file__))
         self.gaemi_config = self._get_config(base_path)
+        self.class_info = get_class_info()
+        self.class_remap = get_class_remap()
+
         self.existing_train_data = []
         self.existing_val_data = []
         self.existing_test_data = []
@@ -41,7 +60,12 @@ class DatasetMaker:
         self.existing_train_data, self.existing_val_data, self.existing_test_data = \
             self._get_existing_data_lists()
         train_data_list, val_data_list, test_data_list = self._split_dataset()
-        self._save_record_json(train_data_list, val_data_list, test_data_list)
+        self._save_img_record_json(train_data_list, type='train')
+        self._save_img_record_json(val_data_list, type='val')
+        self._save_img_record_json(test_data_list, type='test')
+        self._make_panoptic_annotations(train_data_list, type='train')
+        self._make_panoptic_annotations(val_data_list, type='val')
+        self._make_panoptic_annotations(test_data_list, type='test')
 
     def _get_existing_data_lists(self):
         record_path = self.gaemi_config.get('record_path', '')
@@ -118,17 +142,9 @@ class DatasetMaker:
         final_train_data = available_for_train_val[:train_count]
         final_val_data = available_for_train_val[train_count:]
 
-        # 디버그 정보 출력
-        # print(f'Total images: {len(all_img_files)}')
-        # print(f'Existing data - Train: {len(self.existing_train_data)}, '
-        #       f'Val: {len(self.existing_val_data)}, Test: {len(self.existing_test_data)}')
-        # print(f'New images: {len(new_img_files)}, New test: {len(new_test_data)}')
-        # print(f'Final split - Train: {len(final_train_data)}, '
-        #       f'Val: {len(final_val_data)}, Test: {len(final_test_data)}')
-
         return final_train_data, final_val_data, final_test_data
 
-    def _save_record_json(self, train_data_list, val_data_list, test_data_list):
+    def _save_img_record_json(self, data_list, type='train'):
         record_path = self.gaemi_config.get('record_path', '')
         record_file_name = self.gaemi_config.get('record_file_name', 'record')
         service_area = self.gaemi_config.get('service_area', '')
@@ -140,47 +156,137 @@ class DatasetMaker:
             os.makedirs(record_path, exist_ok=True)
 
         # Create file paths for each split
-        train_file_path = os.path.join(record_path, f'{record_file_name}_train.json')
-        val_file_path = os.path.join(record_path, f'{record_file_name}_val.json')
-        test_file_path = os.path.join(record_path, f'{record_file_name}_test.json')
+        file_path = os.path.join(record_path, f'{record_file_name}_{type}.json')
 
-        # Save train data
-        train_record = {}
-        if os.path.exists(train_file_path):
+        # Save type data
+        record = {}
+        if os.path.exists(file_path):
             try:
-                train_record = self._read_json(train_file_path)
+                record = self._read_json(file_path)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.logger.warning(f'Failed to read existing train record: {e}. Creating new record.')
+                self.logger.warning(f'Failed to read existing {type} record: {e}. Creating new record.')
 
-        train_record[service_area] = train_data_list
-        self._write_json(train_file_path, train_record)
+        record[service_area] = data_list
+        self._write_json(file_path, record)
 
-        # Save val data
-        val_record = {}
-        if os.path.exists(val_file_path):
+    def _make_panoptic_annotations(self, data_list, type='train'):
+        record_path = self.gaemi_config.get('record_path', '')
+        gaemi_annotations = []
+        for data_path in tqdm(data_list):
+            # print(data_path)
+            mask_annotation_path = data_path.replace('/images/', '/labels/').replace('.jpg', '.png')
+            json_annotation_path = data_path.replace('/images/', '/labels/').replace('.jpg', '.json')
+            if not os.path.exists(mask_annotation_path):
+                self.logger.warning(f'Annotation file not found for image {data_path}')
+                continue
+
+            annotation_img = Image.open(mask_annotation_path)
+            annotation_np = np.array(annotation_img)
+
+            record = {
+                'file_name': data_path,
+                'image_id': os.path.basename(data_path).replace('.jpg', ''),
+                'height': annotation_img.height,
+                'width': annotation_img.width,
+                'annotations': []
+            }
+
+            # Process the annotation to create panoptic format
+            panoptic_annotation = self._calculate_annotation(annotation_np, json_annotation_path)
+            record['annotations'] = panoptic_annotation
+            gaemi_annotations.append(record)
+
+        save_path = os.path.join(record_path, f'panoptic_{type}_annotations.json')
+        self._write_json(save_path, gaemi_annotations)
+
+    def _calculate_annotation(self, annotation_np, json_path):
+        """JSON annotation 파일에서 각 segment의 area와 bbox를 계산"""
+        json_info = self._read_json(json_path)
+        image_height = json_info.get('imageHeight', annotation_np.shape[0])
+        image_width = json_info.get('imageWidth', annotation_np.shape[1])
+        
+        annotations = []
+        segment_id = 1  # Start from 1
+
+        for shp in json_info['shapes']:
+            label = shp['label']
+            
+            # Convert label if in remap (e.g., 'cement' -> 'road')
+            converted_label = self.class_remap.get(label, label)
+            
+            # Get label info from class_info
+            # print(self.class_info)
+            # print(type(converted_label))
             try:
-                val_record = self._read_json(val_file_path)
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.logger.warning(f'Failed to read existing val record: {e}. Creating new record.')
+                label_info = self.class_info[converted_label]
+            except KeyError:
+                self.logger.warning(f'Label "{label}" (converted: "{converted_label}") not found in class_info. Skipping.')
+                continue
+            
+            label_id = label_info.get('id', 0)
+            category_id = label_info.get('category_id', 0)
+            
+            if label_id == 0:
+                self.logger.warning(f'Label "{label}" has id=0. Skipping.')
+                continue
 
-        val_record[service_area] = val_data_list
-        self._write_json(val_file_path, val_record)
+            # Get polygon points
+            polygon = shp['points']
+            
+            # Calculate area and bbox
+            area, bbox = self._calculate_area_and_bbox(polygon, image_height, image_width)
+            
+            # iscrowd는 instance segmentation에서만 사용, panoptic에서는 기본 0
+            iscrowd = 0
 
-        # Save test data
-        test_record = {}
-        if os.path.exists(test_file_path):
-            try:
-                test_record = self._read_json(test_file_path)
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.logger.warning(f'Failed to read existing test record: {e}. Creating new record.')
+            annotation_info = {
+                'label': label,
+                "id": segment_id,
+                "category_id": int(category_id),
+                "area": int(area),
+                "bbox": bbox,
+                "iscrowd": iscrowd
+            }
+            
+            annotations.append(annotation_info)
+            segment_id += 1
 
-        test_record[service_area] = test_data_list
-        self._write_json(test_file_path, test_record)
+        return annotations
 
-        # debug
-        # print(f'Saving records - Train: {len(train_data_list)} to {train_file_path}')
-        # print(f'                 Val: {len(val_data_list)} to {val_file_path}')
-        # print(f'                 Test: {len(test_data_list)} to {test_file_path}')
+    def _calculate_area_and_bbox(self, polygon, image_height, image_width):
+        """Polygon 좌표로부터 area와 bbox를 계산"""
+        # Convert polygon points to numpy array
+        polygon_array = np.array(polygon, dtype=np.int32)
+        
+        # Create binary mask
+        mask = np.zeros((image_height, image_width), dtype=np.uint8)
+        cv2.fillPoly(mask, [polygon_array], 1)
+        
+        # Calculate area (number of pixels in the mask)
+        area = np.sum(mask)
+        
+        # Calculate bounding box
+        # Horizontal projection
+        hor = np.sum(mask, axis=0)
+        hor_idx = np.nonzero(hor)[0]
+        
+        if len(hor_idx) == 0:
+            # Empty mask
+            return 0, [0, 0, 0, 0]
+        
+        x = hor_idx[0]
+        width = hor_idx[-1] - x + 1
+        
+        # Vertical projection
+        vert = np.sum(mask, axis=1)
+        vert_idx = np.nonzero(vert)[0]
+        y = vert_idx[0]
+        height = vert_idx[-1] - y + 1
+        
+        bbox = [int(x), int(y), int(width), int(height)]
+        
+        return area, bbox
+
 
     def _read_json(self, path):
         try:
