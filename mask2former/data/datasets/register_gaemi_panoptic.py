@@ -4,10 +4,11 @@ import json
 import logging
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
+from custom_util.config.class_config import class_info
 
 logger = logging.getLogger(__name__)
 
-def load_custom_dicts(dataset_dir, class_names, service_areas, target_img_json_path):
+def load_custom_dicts(dataset_dir, class_names, service_areas, target_img_json_path, dataset_id_to_contiguous_id, ignore_label=255):
     """
     Load dataset from panoptic annotation JSON, filtered by record JSON.
     Wraps segmentation in outer list for Detectron2 format.
@@ -17,6 +18,8 @@ def load_custom_dicts(dataset_dir, class_names, service_areas, target_img_json_p
         class_names: List of class names (for validation)
         service_areas: List of service areas to use (empty = use all)
         target_img_json_path: Path to record JSON (e.g., record_train.json)
+        dataset_id_to_contiguous_id: Mapping from original dataset ID to contiguous ID
+        ignore_label: Label value for non-trainable classes (default: 255)
 
     Returns:
         List[dict]: Detectron2 standard dataset format
@@ -123,12 +126,22 @@ def load_custom_dicts(dataset_dir, class_names, service_areas, target_img_json_p
             # Simply wrap in outer list for Detectron2 format
             detectron2_segmentation = [segmentation]
 
+            # Convert dataset category_id to contiguous_id
+            # Non-trainable classes (void, forbidden-area) are mapped to ignore_label
+            original_category_id = ann['category_id']
+            contiguous_id = dataset_id_to_contiguous_id.get(original_category_id, ignore_label)
+
+            # Skip non-trainable classes (void, forbidden-area)
+            # These annotations should not be included in the dataset
+            if contiguous_id == ignore_label:
+                continue
+
             obj = {
                 "segmentation": detectron2_segmentation,  # [[x1,y1,x2,y2,...]]
                 "bbox": ann['bbox'],                      # [x, y, w, h]
                 "bbox_mode": ann.get('bbox_mode', 1),     # 1=XYWH_ABS (default for panoptic)
                 "area": ann['area'],
-                "category_id": ann['category_id'],
+                "category_id": contiguous_id,             # Use contiguous_id for trainable classes
                 "iscrowd": ann['iscrowd']
             }
             record["annotations"].append(obj)
@@ -157,30 +170,55 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
     available_service_areas = cfg.DATASETS.TARGET_SERVICE_AREAS
 
-    # 2. register dataset
+    # 2. Filter trainable classes from class_info
+    # Only classes with 'trainable': True will be included in training
+    trainable_classes = [class_name for class_name in class_names 
+                         if class_info.get(class_name, {}).get('trainable', True)]
+    
+    non_trainable_classes = [class_name for class_name in class_names 
+                            if not class_info.get(class_name, {}).get('trainable', True)]
+    
+    logger.info(f"Trainable classes ({len(trainable_classes)}): {trainable_classes}")
+    logger.info(f"Non-trainable classes ({len(non_trainable_classes)}): {non_trainable_classes}")
+
+    # 3. Create ID mappings for trainable classes only
+    # Original dataset_id -> contiguous_id (0, 1, 2, ...)
+    dataset_id_to_contiguous_id = {}
+    contiguous_id = 0
+    
+    for class_name in trainable_classes:
+        if class_name in class_info:
+            original_id = class_info[class_name]['id']
+            dataset_id_to_contiguous_id[original_id] = contiguous_id
+            contiguous_id += 1
+    
+    # Reverse mapping for metadata
+    thing_dataset_id_to_contiguous_id = {k: v for k, v in dataset_id_to_contiguous_id.items()}
+    stuff_dataset_id_to_contiguous_id = {k: v for k, v in dataset_id_to_contiguous_id.items()}
+
+    # 4. register dataset
+    ignore_label = 255
     DatasetCatalog.register(
-        name,
+        name[0],
         lambda: load_custom_dicts(
             dataset_dir,
-            class_names,
+            trainable_classes,  # Pass only trainable classes
             available_service_areas,
-            target_json_path
+            target_json_path,
+            dataset_id_to_contiguous_id,  # Pass ID mapping
+            ignore_label
         )
     )
 
-    # 3. register metadata - Panoptic Segmentation
-    # Create ID mappings
-    thing_dataset_id_to_contiguous_id = {i: i for i in range(len(class_names))}
-    stuff_dataset_id_to_contiguous_id = {i: i for i in range(len(class_names))}
-
-    MetadataCatalog.get(name).set(
-        # necessary: class information
-        thing_classes=cfg.DATASETS.THING_CLASSES,            # individual object classes
-        stuff_classes=cfg.DATASETS.STUFF_CLASSES,            # background/area classes
+    # 5. register metadata - Panoptic Segmentation
+    MetadataCatalog.get(name[0]).set(
+        # necessary: class information (only trainable classes)
+        thing_classes=trainable_classes,                     # individual object classes
+        stuff_classes=trainable_classes,                     # background/area classes
 
         # necessary: evaluation settings
-        evaluator_type="geami",                              # custom evaluator type
-        ignore_label=255,
+        evaluator_type="gaemi",                              # custom evaluator type
+        ignore_label=ignore_label,
 
         # necessary: ID mappings
         thing_dataset_id_to_contiguous_id=thing_dataset_id_to_contiguous_id,
@@ -188,17 +226,19 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
         # optional: path information
         image_root=dataset_dir,
-        json_file='',
+        val_img_json_path=cfg.DATASETS.TEST_JSON_PATH,
+        available_service_areas=available_service_areas,
 
         # Panoptic only (required for panoptic segmentation)
         label_divisor=1000,                                  # classify panoptic IDs
     )
-    logger.info(f"Registered dataset '{name}' with {len(class_names)} classes.")
+    logger.info(f"Registered dataset '{name[0]}' with {len(trainable_classes)} trainable classes (total: {len(class_names)}).")
 
     # Debug: Print metadata to verify registration
-    logger.info(f"Metadata for '{name}':")
-    meta = MetadataCatalog.get(name)
-    logger.info(f"  - thing_classes: {meta.thing_classes}")
-    logger.info(f"  - stuff_classes: {meta.stuff_classes}")
+    logger.info(f"Metadata for '{name[0]}':")
+    meta = MetadataCatalog.get(name[0])
+    logger.info(f"  - thing_classes ({len(meta.thing_classes)}): {meta.thing_classes}")
+    logger.info(f"  - stuff_classes ({len(meta.stuff_classes)}): {meta.stuff_classes}")
     logger.info(f"  - ignore_label: {meta.ignore_label}")
     logger.info(f"  - evaluator_type: {meta.evaluator_type}")
+    logger.info(f"  - ID mapping: {dataset_id_to_contiguous_id}")
