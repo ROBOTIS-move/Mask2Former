@@ -1,7 +1,9 @@
 
 import os
+import re
 import json
 import logging
+import yaml
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from custom_util.config.class_config import class_info
@@ -242,3 +244,110 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     logger.info(f"  - ignore_label: {meta.ignore_label}")
     logger.info(f"  - evaluator_type: {meta.evaluator_type}")
     logger.info(f"  - ID mapping: {dataset_id_to_contiguous_id}")
+
+
+def register_all_gaemi(config_path=None):
+    """
+    Register GAEMI datasets automatically for inference without cfg.
+    Reads configuration from Base-Gaemi-PanopticSegmentation.yaml
+
+    Args:
+        config_path: Path to config file. If None, uses default path.
+    """
+    # Determine config path
+    if config_path is None:
+        # Default path relative to Mask2Former directory
+        # __file__ is: .../Mask2Former/mask2former/data/datasets/register_gaemi_panoptic.py
+        # Need to go up 4 levels: datasets -> data -> mask2former -> Mask2Former
+        current_file = os.path.abspath(__file__)
+        mask2former_module_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # Mask2Former/mask2former
+        mask2former_root = os.path.dirname(mask2former_module_dir)  # Mask2Former
+        config_path = os.path.join(
+            mask2former_root,
+            "configs/gaemi/panoptic-segmentation/Base-Gaemi-PanopticSegmentation.yaml"
+        )
+
+    if not os.path.exists(config_path):
+        logger.warning(f"GAEMI config file not found: {config_path}")
+        logger.warning("Skipping automatic GAEMI dataset registration.")
+        return
+
+    try:
+        # Read YAML config and extract only needed fields using regex
+        # to avoid issues with python objects in other sections
+        with open(config_path, 'r') as f:
+            content = f.read()
+
+        # Extract DATA_DIR_PATH using regex
+        data_dir_match = re.search(r'DATA_DIR_PATH:\s*["\']?([^"\'\n]+)["\']?', content)
+        data_dir_path = data_dir_match.group(1).strip() if data_dir_match else ''
+
+        # Extract CLASS_NAMES - look for the list section
+        class_names = []
+        class_names_match = re.search(r'CLASS_NAMES:\s*\[(.*?)\]', content, re.DOTALL)
+        if class_names_match:
+            # Inline list format
+            list_content = class_names_match.group(1)
+            class_names = [c.strip().strip('"\',') for c in list_content.split(',') if c.strip() and not c.strip().startswith('#')]
+        else:
+            # Multi-line list format
+            class_names_section = re.search(r'CLASS_NAMES:\s*\n((?:\s*-\s*[^\n]+\n)+)', content)
+            if class_names_section:
+                for line in class_names_section.group(1).split('\n'):
+                    match = re.search(r'-\s*["\']?([^"\',\n]+)["\']?', line)
+                    if match:
+                        class_name = match.group(1).strip()
+                        if class_name and not class_name.startswith('#'):
+                            class_names.append(class_name)
+
+        logger.info(f"Parsed config - Data directory: {data_dir_path}, Classes found: {len(class_names)}")
+
+        if not class_names:
+            logger.warning("CLASS_NAMES not found in config file. Skipping GAEMI registration.")
+            return
+
+        logger.info(f"Auto-registering GAEMI datasets from config: {config_path}")
+        logger.info(f"  - Data directory: {data_dir_path}")
+        logger.info(f"  - Classes: {len(class_names)}")
+
+        # Filter trainable classes from class_info
+        trainable_classes = [class_name for class_name in class_names 
+                            if class_info.get(class_name, {}).get('trainable', True)]
+
+        # Create ID mappings for trainable classes only
+        dataset_id_to_contiguous_id = {}
+        contiguous_id = 0
+
+        for class_name in trainable_classes:
+            if class_name in class_info:
+                original_id = class_info[class_name]['id']
+                dataset_id_to_contiguous_id[original_id] = contiguous_id
+                contiguous_id += 1
+
+        # Register basic metadata for common dataset names
+        for split in ["train", "val", "test"]:
+            dataset_name = f"gaemi_{split}"
+
+            # Only register metadata (not DatasetCatalog for inference)
+            MetadataCatalog.get(dataset_name).set(
+                thing_classes=trainable_classes,
+                stuff_classes=trainable_classes,
+                thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
+                stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
+                evaluator_type="gaemi",
+                ignore_label=255,
+                label_divisor=1000,
+                image_root=data_dir_path,
+            )
+
+            logger.info(f"Registered metadata for '{dataset_name}' with {len(trainable_classes)} trainable classes")
+
+    except Exception as e:
+        logger.warning(f"Failed to auto-register GAEMI datasets: {e}")
+        logger.warning("You may need to register manually in your training script.")
+
+
+# Auto-register GAEMI datasets when this module is imported
+if __name__.endswith(".register_gaemi_panoptic"):
+    register_all_gaemi()
+
