@@ -201,7 +201,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     # 4. register dataset
     ignore_label = 255
     DatasetCatalog.register(
-        name[0],
+        name,
         lambda: load_custom_dicts(
             dataset_dir,
             trainable_classes,  # Pass only trainable classes
@@ -213,7 +213,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     )
 
     # 5. register metadata - Panoptic Segmentation
-    MetadataCatalog.get(name[0]).set(
+    MetadataCatalog.get(name).set(
         # necessary: class information (only trainable classes)
         thing_classes=trainable_classes,                     # individual object classes
         stuff_classes=trainable_classes,                     # background/area classes
@@ -234,11 +234,11 @@ def register_gaemi_dataset(cfg, name, target_json_path):
         # Panoptic only (required for panoptic segmentation)
         label_divisor=1000,                                  # classify panoptic IDs
     )
-    logger.info(f"Registered dataset '{name[0]}' with {len(trainable_classes)} trainable classes (total: {len(class_names)}).")
+    logger.info(f"Registered dataset '{name}' with {len(trainable_classes)} trainable classes (total: {len(class_names)}).")
 
     # Debug: Print metadata to verify registration
-    logger.info(f"Metadata for '{name[0]}':")
-    meta = MetadataCatalog.get(name[0])
+    logger.info(f"Metadata for '{name}':")
+    meta = MetadataCatalog.get(name)
     logger.info(f"  - thing_classes ({len(meta.thing_classes)}): {meta.thing_classes}")
     logger.info(f"  - stuff_classes ({len(meta.stuff_classes)}): {meta.stuff_classes}")
     logger.info(f"  - ignore_label: {meta.ignore_label}")

@@ -40,6 +40,7 @@ from detectron2.evaluation import (
     DatasetEvaluators,
     LVISEvaluator,
     SemSegEvaluator,
+    GaemiPanopticEvaluator,
     verify_results,
 )
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
@@ -140,12 +141,11 @@ class Trainer(DefaultTrainer):
         if evaluator_type == "lvis":
             return LVISEvaluator(dataset_name, output_dir=output_folder)
         # GAEMI
-        if evaluator_type == 'geami':
-            # Use InstanceSegEvaluator for polygon-based annotations
+        if evaluator_type == 'gaemi':
+            # Use GaemiPanopticEvaluator for custom gaemi dataset
             evaluator_list.append(
-                InstanceSegEvaluator(
-                    dataset_name,
-                    output_dir=output_folder,
+                GaemiPanopticEvaluator(
+                    dataset_name
                 )
             )
         if len(evaluator_list) == 0:
