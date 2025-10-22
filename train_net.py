@@ -41,6 +41,7 @@ from detectron2.evaluation import (
     LVISEvaluator,
     SemSegEvaluator,
     GaemiPanopticEvaluator,
+    GaemiSemsegEvaluator,
     verify_results,
 )
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
@@ -58,7 +59,7 @@ from mask2former import (
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
 )
-from mask2former.data.datasets.register_gaemi_panoptic import (
+from mask2former.data.datasets.register_gaemi_semantic import (
     register_gaemi_dataset
 )
 
@@ -144,7 +145,7 @@ class Trainer(DefaultTrainer):
         if evaluator_type == 'gaemi':
             # Use GaemiPanopticEvaluator for custom gaemi dataset
             evaluator_list.append(
-                GaemiPanopticEvaluator(
+                GaemiSemsegEvaluator(
                     dataset_name
                 )
             )
@@ -315,8 +316,9 @@ def main(args):
 
     # Register GAEMI datasets using record JSON files
     # cfg.DATASETS.TRAIN is a tuple like ("gaemi_train",), so we need the first element
-    register_gaemi_dataset(cfg, cfg.DATASETS.TRAIN[0], cfg.DATASETS.TRAIN_JSON_PATH)
-    register_gaemi_dataset(cfg, cfg.DATASETS.TEST[0], cfg.DATASETS.TEST_JSON_PATH)
+    if args.custom:
+        register_gaemi_dataset(cfg, cfg.DATASETS.TRAIN[0], cfg.DATASETS.TRAIN_JSON_PATH)
+        register_gaemi_dataset(cfg, cfg.DATASETS.TEST[0], cfg.DATASETS.TEST_JSON_PATH)
 
     if args.eval_only:
         model = Trainer.build_model(cfg)
