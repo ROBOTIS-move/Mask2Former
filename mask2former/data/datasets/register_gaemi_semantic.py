@@ -5,7 +5,7 @@ import logging
 import yaml
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
-from custom_util.config.class_config import class_info
+from custom_util.config.class_config import get_class_info
 
 logger = logging.getLogger(__name__)
 
@@ -50,37 +50,20 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
 
     logger.info(f"Total images to load: {len(target_image_paths)}")
 
-    # Step 4: Determine semantic annotation JSON path
-    # record_train.json -> semantic_train_annotations.json
-    # record_val.json -> semantic_val_annotations.json
-    # base_dir = os.path.dirname(target_img_json_path)
-    # base_name = os.path.basename(target_img_json_path)
-
-    # if "train" in base_name:
-    #     semantic_json_name = "semantic_train_annotations.json"
-    # elif "val" in base_name:
-    #     semantic_json_name = "semantic_val_annotations.json"
-    # elif "test" in base_name:
-    #     semantic_json_name = "semantic_test_annotations.json"
-    # else:
-    #     semantic_json_name = "semantic_annotations.json"
-
-    # semantic_json_path = os.path.join(base_dir, semantic_json_name)
-
     if not os.path.exists(gt_json_path):
         raise FileNotFoundError(
             f"Semantic annotation file not found: {gt_json_path}\n"
             f"Please make sure the file exists in the same directory as {target_img_json_path}"
         )
 
-    # Step 5: Load semantic annotations JSON
+    # Step 4: Load semantic annotations JSON
     logger.info(f"Loading semantic annotations from {gt_json_path}...")
     with open(gt_json_path, 'r') as f:
         semantic_data = json.load(f)
 
     logger.info(f"Total annotations in semantic JSON: {len(semantic_data)}")
 
-    # Step 6: Filter and convert annotations
+    # Step 5: Filter and convert annotations
     dataset_dicts = []
     loaded_count = 0
     skipped_count = 0
@@ -156,6 +139,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
     # 2. Filter trainable classes from class_info
     # Only classes with 'trainable': True will be included in training
+    class_info = get_class_info(cfg.DATASETS.DATA_TYPE)
     trainable_classes = [class_name for class_name in class_names 
                          if class_info.get(class_name, {}).get('trainable', True)]
     
@@ -166,9 +150,10 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     logger.info(f"Non-trainable classes ({len(non_trainable_classes)}): {non_trainable_classes}")
 
     # 3. Create ID mappings for trainable classes only
-    # Original dataset_id -> contiguous_id (0, 1, 2, ...)
+    # Original dataset_id -> contiguous_id (1, 2, 3, ...)
+    # Note: contiguous_id starts from 1 because 0 is reserved for background/ignore in the model
     dataset_id_to_contiguous_id = {}
-    contiguous_id = 0
+    contiguous_id = 1  # Start from 1 instead of 0
     # for trainable classes only
     for class_name in trainable_classes:
         if class_name in class_info:
@@ -195,7 +180,6 @@ def register_gaemi_dataset(cfg, name, target_json_path):
             available_service_areas,
             target_json_path,
             gt_json_path,
-            ignore_label
         )
     )
 
@@ -218,6 +202,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
         image_root=dataset_dir,
         gt_json_path=gt_json_path,  # semantic_gt_json_path
         val_img_json_path=cfg.DATASETS.TEST_JSON_PATH,
+        class_info=class_info,
         available_service_areas=available_service_areas,
     )
     logger.info(f"Registered dataset '{name}' with {len(trainable_classes)} trainable classes (total: {len(class_names)}).")
@@ -260,7 +245,6 @@ def register_all_gaemi(config_path=None):
         logger.warning(f"GAEMI semantic config file not found: {config_path}")
         logger.warning("Skipping automatic GAEMI semantic dataset registration.")
         raise FileNotFoundError(f"Config file not found: {config_path}")
-        return
 
     try:
         # Read YAML config and extract only needed fields using regex
@@ -301,12 +285,14 @@ def register_all_gaemi(config_path=None):
         logger.info(f"  - Classes: {len(class_names)}")
 
         # Filter trainable classes from class_info
+        class_info = get_class_info(content.DATASETS.DATA_TYPE)
         trainable_classes = [class_name for class_name in class_names 
                             if class_info.get(class_name, {}).get('trainable', True)]
 
         # Create ID mappings for trainable classes only
+        # Note: contiguous_id starts from 1 because 0 is reserved for background/ignore in the model
         dataset_id_to_contiguous_id = {}
-        contiguous_id = 0
+        contiguous_id = 1  # Start from 1 instead of 0
 
         for class_name in trainable_classes:
             if class_name in class_info:
@@ -324,7 +310,7 @@ def register_all_gaemi(config_path=None):
                 thing_classes=trainable_classes,
                 stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,  # Semantic segmentation용
                 thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,  # Mask2Former 모델 호환용
-                evaluator_type="gaemi",
+                evaluator_type="gaemi_semantic",
                 ignore_label=255,
                 image_root=data_dir_path,
             )
