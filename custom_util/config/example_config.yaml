@@ -8,3 +8,4 @@ gaemi_GT_data:
   record_path: /path/to/your/trained
   # You don't need write extension. It will be added automatically.
   record_file_name: record
+  model_train_data_path: /path/to/dataset/temp_png
