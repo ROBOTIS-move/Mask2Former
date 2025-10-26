@@ -142,7 +142,7 @@ class Trainer(DefaultTrainer):
         if evaluator_type == "lvis":
             return LVISEvaluator(dataset_name, output_dir=output_folder)
         # GAEMI
-        if evaluator_type == 'gaemi':
+        if evaluator_type == 'gaemi_semantic':
             # Use GaemiPanopticEvaluator for custom gaemi dataset
             evaluator_list.append(
                 GaemiSemsegEvaluator(
