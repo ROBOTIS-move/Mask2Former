@@ -24,10 +24,11 @@ DATASETS:
   TARGET_SERVICE_AREAS: []
   # If you change the class names, should be changed also class number in MODEL.SEM_SEG_HEAD.NUM_CLASSES(R50_bs16_90k_gaemi.yaml)
   # 4-generation
+  DATA_TYPE: "DrivingAreaSegmentation"
   CLASS_NAMES: [
     'runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
-    'speed-bump', 'manhole', 'terrain', 'vegetation', 'poll', 'pedestrian',
-    'tree', 'vehicle', 'dynamic', 'static'
+    'speed-bump', 'manhole', 'terrain', 'vegetation', 'sky', 'building', 'poll', 'pedestrian',
+    'animal', 'tree', 'vehicle', 'dynamic', 'static', 'void'
   ]
   STUFF_CLASSES: ['runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
     'speed-bump', 'manhole', 'terrain', 'vegetation','tree', 'static',]
@@ -82,7 +83,7 @@ INPUT:
   FORMAT: "RGB"
   DATASET_MAPPER_NAME: "mask_former_semantic"
 TEST:
-  EVAL_PERIOD: 5000
+  EVAL_PERIOD: 2000
   AUG:
     ENABLED: False
     MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
@@ -92,6 +93,7 @@ DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
   NUM_WORKERS: 16
 VERSION: 2
+VIS_PERIOD: 500
 EARLY_STOP:
   ENABLED: False
   PATIENCE: 5
