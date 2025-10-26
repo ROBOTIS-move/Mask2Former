@@ -1,29 +1,40 @@
 import os
-import sys
 import yaml
 import json
 import logging
-import numpy as np
-import cv2
 
 from glob import glob
 from random import shuffle
-from PIL import Image
-from tqdm import tqdm
 
 from Mask2Former.custom_util.config.class_config import (
     get_class_info,
     get_class_remap
 )
+from Mask2Former.custom_util.gaemi.panoptic_util import PanopticUtil
+from Mask2Former.custom_util.gaemi.semantic_util import SemanticUtil
 
 
 class DatasetMaker:
 
-    def __init__(self):
+    def __init__(self, data_type='DrivingAreaSegmentation', convert_type='semantic'):
+        self.data_type = data_type
+        self.convert_type = convert_type
         base_path = os.path.dirname(os.path.abspath(__file__))
         self.gaemi_config = self._get_config(base_path)
         self.class_info = get_class_info()
         self.class_remap = get_class_remap()
+
+        self.panoptic = PanopticUtil(
+            self.gaemi_config,
+            self.class_info,
+            self.class_remap
+        )
+        self.semantic = SemanticUtil(
+            self.data_type,
+            self.gaemi_config,
+            self.class_info,
+            self.class_remap
+        )
 
         self.existing_train_data = []
         self.existing_val_data = []
@@ -54,12 +65,70 @@ class DatasetMaker:
         self.existing_train_data, self.existing_val_data, self.existing_test_data = \
             self._get_existing_data_lists()
         train_data_list, val_data_list, test_data_list = self._split_dataset()
-        self._save_img_record_json(train_data_list, type='train')
-        self._save_img_record_json(val_data_list, type='val')
-        self._save_img_record_json(test_data_list, type='test')
-        self._make_panoptic_annotations(self._get_target_file_path('train'), type='train')
-        self._make_panoptic_annotations(self._get_target_file_path('val'), type='val')
-        self._make_panoptic_annotations(self._get_target_file_path('test'), type='test')
+        self._save_img_record_json(train_data_list, target_type='train')
+        self._save_img_record_json(val_data_list, target_type='val')
+        self._save_img_record_json(test_data_list, target_type='test')
+
+        if self.convert_type == 'panoptic':
+            json_path, annotations = self.panoptic.make_panoptic_annotations(
+                self._get_target_file_path('train'),
+                target_type='train'
+            )
+            self._write_json(json_path, annotations)
+            json_path, annotations = self.panoptic.make_panoptic_annotations(
+                self._get_target_file_path('val'),
+                target_type='val'
+            )
+            self._write_json(json_path, annotations)
+            json_path, annotations = self.panoptic.make_panoptic_annotations(
+                self._get_target_file_path('test'),
+                target_type='test'
+            )
+            self._write_json(json_path, annotations)
+
+            # Create panoptic PNG files
+            self.panoptic.create_panoptic_png(
+                target_type='train'
+            )
+            self.panoptic.create_panoptic_png(
+                target_type='val'
+            )
+            self.panoptic.create_panoptic_png(
+                target_type='test'
+            )
+
+        elif self.convert_type == 'semantic':
+            # Train set
+            train_json_path, train_annotations = self.semantic.create_semantic_annotations(
+                self._get_target_file_path('train'),
+                target_type='train'
+            )
+            self._write_json(train_json_path, train_annotations)
+            self.semantic.create_semantic_png(
+                train_annotations,
+                target_type='train'
+            )
+            # Val set
+            val_json_path, val_annotations = self.semantic.create_semantic_annotations(
+                self._get_target_file_path('val'),
+                target_type='val'
+            )
+            self._write_json(val_json_path, val_annotations)
+            self.semantic.create_semantic_png(
+                val_annotations,
+                target_type='val'
+            )
+            # Test set
+            test_json_path, test_annotations = self.semantic.create_semantic_annotations(
+                self._get_target_file_path('test'),
+                target_type='test'
+            )
+            self._write_json(test_json_path, test_annotations)
+            self.semantic.create_semantic_png(
+                test_annotations,
+                target_type='test'
+            )
+
 
     def _get_existing_data_lists(self):
         record_path = self.gaemi_config.get('record_path', '')
@@ -138,7 +207,7 @@ class DatasetMaker:
 
         return final_train_data, final_val_data, final_test_data
 
-    def _save_img_record_json(self, data_list, type='train'):
+    def _save_img_record_json(self, data_list, target_type='train'):
         record_path = self.gaemi_config.get('record_path', '')
         record_file_name = self.gaemi_config.get('record_file_name', 'record')
         service_area = self.gaemi_config.get('service_area', '')
@@ -150,7 +219,7 @@ class DatasetMaker:
             os.makedirs(record_path, exist_ok=True)
 
         # Create file paths for each split
-        file_path = os.path.join(record_path, f'{record_file_name}_{type}.json')
+        file_path = os.path.join(record_path, f'{record_file_name}_{target_type}.json')
 
         # Save type data
         record = {}
@@ -158,125 +227,10 @@ class DatasetMaker:
             try:
                 record = self._read_json(file_path)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.logger.warning(f'Failed to read existing {type} record: {e}. Creating new record.')
+                self.logger.warning(f'Failed to read existing {target_type} record: {e}. Creating new record.')
 
         record[service_area] = data_list
         self._write_json(file_path, record)
-
-    def _make_panoptic_annotations(self, data_list, type='train'):
-        gaemi_annotations = []
-        for data_path in tqdm(data_list):
-            # print(data_path)
-            mask_annotation_path = data_path.replace('/images/', '/labels/').replace('.jpg', '.png')
-            json_annotation_path = data_path.replace('/images/', '/labels/').replace('.jpg', '.json')
-            if not os.path.exists(mask_annotation_path):
-                self.logger.warning(f'Annotation file not found for image {data_path}')
-                continue
-
-            annotation_img = Image.open(mask_annotation_path)
-            annotation_np = np.array(annotation_img)
-
-            record = {
-                'file_name': data_path,
-                'image_id': os.path.basename(data_path).replace('.jpg', ''),
-                'height': annotation_img.height,
-                'width': annotation_img.width,
-                'annotations': []
-            }
-
-            # Process the annotation to create panoptic format
-            panoptic_annotation = self._calculate_annotation(annotation_np, json_annotation_path)
-            record['annotations'] = panoptic_annotation
-            gaemi_annotations.append(record)
-
-        record_path = self.gaemi_config.get('record_path', '')
-        save_path = os.path.join(record_path, f'panoptic_{type}_annotations.json')
-        self._write_json(save_path, gaemi_annotations)
-
-    def _calculate_annotation(self, annotation_np, json_path):
-        json_info = self._read_json(json_path)
-        image_height = json_info.get('imageHeight', annotation_np.shape[0])
-        image_width = json_info.get('imageWidth', annotation_np.shape[1])
-
-        annotations = []
-        segment_id = 1  # Start from 1
-
-        for shp in json_info['shapes']:
-            label = shp['label']
-
-            # Convert label if in remap (e.g., 'cement' -> 'road')
-            converted_label = self.class_remap.get(label, label)
-
-            # Get label info from class_info
-            try:
-                label_info = self.class_info[converted_label]
-            except KeyError:
-                self.logger.warning(f'Label "{label}" (converted: "{converted_label}") not found in class_info. Skipping.')
-                continue
-
-            label_id = label_info.get('id', 0)
-            if label_id == 0:
-                self.logger.warning(f'Label "{label}" has id=0. Skipping.')
-                continue
-
-            category_id = label_info.get('category_id', 0)
-
-            # Get polygon points and flatten to single list
-            polygon = shp['points']  # [[x1, y1], [x2, y2], [x3, y3]]
-            flatten_polygon = [coord for point in polygon for coord in point]  # [x1, y1, x2, y2, x3, y3]
-            # Calculate area and bbox
-            area, bbox = self._calculate_area_and_bbox(polygon, image_height, image_width)
-
-            # iscrowd is using only instance segmentation, default is 0 for panoptic
-            iscrowd = 0
-
-            annotation_info = {
-                'label': label,
-                "id": segment_id,
-                "category_id": int(category_id),
-                'segmentation': flatten_polygon,
-                "area": int(area),
-                "bbox": bbox,
-                "iscrowd": iscrowd
-            }
-
-            annotations.append(annotation_info)
-            segment_id += 1
-
-        return annotations
-
-    def _calculate_area_and_bbox(self, polygon, image_height, image_width):
-        # Convert polygon points to numpy array
-        polygon_array = np.array(polygon, dtype=np.int32)
-
-        # Create binary mask
-        mask = np.zeros((image_height, image_width), dtype=np.uint8)
-        cv2.fillPoly(mask, [polygon_array], 1)
-
-        # Calculate area (number of pixels in the mask)
-        area = np.sum(mask)
-
-        # Calculate bounding box
-        # Horizontal projection
-        hor = np.sum(mask, axis=0)
-        hor_idx = np.nonzero(hor)[0]
-
-        if len(hor_idx) == 0:
-            # Empty mask
-            return 0, [0, 0, 0, 0]
-
-        x = hor_idx[0]
-        width = hor_idx[-1] - x + 1
-
-        # Vertical projection
-        vert = np.sum(mask, axis=1)
-        vert_idx = np.nonzero(vert)[0]
-        y = vert_idx[0]
-        height = vert_idx[-1] - y + 1
-
-        bbox = [int(x), int(y), int(width), int(height)]
-
-        return area, bbox
 
     def _get_target_file_path(self, target_type='train'):
         record_path = self.gaemi_config.get('record_path', '')
