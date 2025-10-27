@@ -14,40 +14,26 @@ MODEL:
     NORM: "SyncBN"  # use syncbn for cityscapes dataset
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  DATA_DIR_PATH: "/mnt/HDD/dataset"
+  DATA_DIR_PATH: "/mnt/HDD/park_dataset"
   TRAIN: ("gaemi_train",)
-  TRAIN_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/record_train.json"
+  TRAIN_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/park/record_train.json"
   TEST: ("gaemi_val",)
-  TEST_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/record_val.json"
+  TEST_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/park/record_val.json"
   # If you want to use specific service areas, set them here.
   # Otherwise, use all areas by leaving the list empty.
   TARGET_SERVICE_AREAS: []
   # If you change the class names, should be changed also class number in MODEL.SEM_SEG_HEAD.NUM_CLASSES(R50_bs16_90k_gaemi.yaml)
   # 4-generation
-  DATA_TYPE: "DrivingAreaSegmentation"
   CLASS_NAMES: [
     'runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
     'speed-bump', 'manhole', 'terrain', 'vegetation', 'sky', 'building', 'poll', 'pedestrian',
-    'animal', 'tree', 'vehicle', 'dynamic', 'static', 'void'
+    'animal', 'tree', 'vehicle', 'pole', 'pole-group', 'traffic-sign', 'traffic-light-front',
+    'traffic-light-back', 'fence', 'dynamic', 'static', 'forbidden-area', 'void'
   ]
   STUFF_CLASSES: ['runway', 'road', 'curb', 'mat', 'braille-block', 'cross-walk', 'bicycle-road',
-    'speed-bump', 'manhole', 'terrain', 'vegetation','tree', 'static',]
-  THING_CLASSES: ['poll', 'pedestrian','vehicle', 'dynamic',]
-  remap_flag: True
-  convert_classes_mapping:
-    - ["pattern-block", "runway"]
-    - ["deck", "runway"]
-    - ["drain", "curb"]
-    - ["cement", "road"]
-    - ["asphalt", "road"]
-    - ["non-pattern-block", "terrain"]
-    - ["sand", "terrain"]
-    - ["grass", "terrain"]
-    - ["pebble", "terrain"]
-    - ["wall", "static"]
-    - ["building", "static"]
-    - ["animal", "dynamic"]
-    - ["sky", "void"]
+    'speed-bump', 'manhole', 'terrain', 'vegetation', 'sky', 'building',  'static', 'forbidden-area', 'void']
+  THING_CLASSES: ['poll', 'pedestrian', 'animal', 'tree', 'vehicle', 'dynamic', 'pole', 'pole-group',
+    'traffic-sign', 'traffic-light-front', 'traffic-light-back', 'fence']
 
 SOLVER:
   CHECKPOINT_PERIOD: 4000  # save a checkpoint after every this number of iterations
