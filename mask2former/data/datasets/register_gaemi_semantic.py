@@ -139,7 +139,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
     # 2. Filter trainable classes from class_info
     # Only classes with 'trainable': True will be included in training
-    class_info = get_class_info(cfg.DATASETS.DATA_TYPE)
+    class_info = get_class_info()
     trainable_classes = [class_name for class_name in class_names 
                          if class_info.get(class_name, {}).get('trainable', True)]
     
@@ -285,7 +285,7 @@ def register_all_gaemi(config_path=None):
         logger.info(f"  - Classes: {len(class_names)}")
 
         # Filter trainable classes from class_info
-        class_info = get_class_info(content.DATASETS.DATA_TYPE)
+        class_info = get_class_info()
         trainable_classes = [class_name for class_name in class_names 
                             if class_info.get(class_name, {}).get('trainable', True)]
 
