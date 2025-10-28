@@ -76,48 +76,47 @@ class SemanticUtil:
         for annotation in tqdm(annotation_info):
             json_path = annotation['json_file_name']
             sem_seg_path = annotation['sem_seg_file_name']
-            
-            # JSON 파일 읽기
+
+            # Read JSON file
             with open(json_path, 'r', encoding='utf-8') as f:
                 json_data = json.load(f)
-            
-            # 이미지 크기 가져오기
+
+            # Get image dimensions
             height = annotation['height']
             width = annotation['width']
-            
-            # Semantic segmentation PNG 생성 (0으로 초기화)
+
+            # Create semantic segmentation PNG (initialized with 0)
             semantic_map = np.zeros((height, width), dtype=np.uint8)
-            
-            # 각 shape(polygon) 처리
+
+            # Process each shape (polygon)
             for shape in json_data.get('shapes', []):
                 label = shape['label']
                 points = shape['points']
-                
-                # DrivingAreaSegmentation 타입일 때 class_remap 적용
+
+                # Apply class_remap for DrivingAreaSegmentation type
                 if self.class_remap.get(self.data_type, None):
                     if label in self.class_remap[self.data_type]:
                         label = self.class_remap[self.data_type][label]
                         self.logger.debug(f"Remapped {shape['label']} -> {label}")
-                
-                # 클래스 정보에서 ID 찾기
+
+                # Find ID from class info
                 if label in self.class_info:
                     class_id = self.class_info[label]['id']
                 else:
                     self.logger.warning(f"Unknown label '{label}' in {json_path}, skipping...")
                     continue
-                
-                # Polygon 좌표를 numpy array로 변환
+
+                # Convert polygon coordinates to numpy array
                 pts = np.array(points, dtype=np.int32)
-                
-                # Polygon을 semantic map에 그리기
+
+                # Draw polygon on semantic map
                 cv2.fillPoly(semantic_map, [pts], class_id)
-            
-            # 저장 디렉토리 생성
+
+            # Create save directory
             os.makedirs(os.path.dirname(sem_seg_path), exist_ok=True)
-            
-            # PNG 파일로 저장
+
+            # Save as PNG file
             cv2.imwrite(sem_seg_path, semantic_map)
             self.logger.debug(f"Saved semantic PNG: {sem_seg_path}")
-        
-        self.logger.info(f"Semantic PNG creation completed for {target_type} set!")
 
+        self.logger.info(f"Semantic PNG creation completed for {target_type} set!")
