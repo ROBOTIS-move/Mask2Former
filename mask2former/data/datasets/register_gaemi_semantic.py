@@ -186,6 +186,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     # 5. register metadata - Semantic Segmentation
     MetadataCatalog.get(name).set(
         # necessary: class information (only trainable classes)
+        all_classes=class_names,               # all classes
         stuff_classes=trainable_classes,       # semantic classes
         thing_classes=trainable_classes,       # for compatibility
 
@@ -195,6 +196,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
         # necessary: ID mappings (for evaluator)
         # not necessary to separate stuff/thing mappings in semantic segmentation
+        all_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
         stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
         thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
 
@@ -237,7 +239,7 @@ def register_all_gaemi(config_path=None):
         ### 확인 필수 ####
         config_path = os.path.join(
             mask2former_root,
-            "configs/gaemi/semantic-segmentation/Base-Gaemi-SemanticSegmentation_4gen.yaml"
+            "configs/gaemi/semantic-segmentation/Base-Gaemi-SemanticSegmentation.yaml"
         )
         #############3
 
