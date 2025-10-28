@@ -213,10 +213,7 @@ class DatasetMaker:
         service_area = self.gaemi_config.get('service_area', '')
 
         # Create directory if it doesn't exist
-        if not os.path.exists(record_path):
-            if not self._is_path_allowed(record_path):
-                raise PermissionError(f'Access denied: Cannot create directory {record_path}')
-            os.makedirs(record_path, exist_ok=True)
+        os.makedirs(record_path, exist_ok=True)
 
         # Create file paths for each split
         file_path = os.path.join(record_path, f'{record_file_name}_{target_type}.json')
