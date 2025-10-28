@@ -236,12 +236,10 @@ def register_all_gaemi(config_path=None):
         mask2former_module_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # Mask2Former/mask2former
         mask2former_root = os.path.dirname(mask2former_module_dir)  # Mask2Former
 
-        ### 확인 필수 ####
         config_path = os.path.join(
             mask2former_root,
             "configs/gaemi/semantic-segmentation/Base-Gaemi-SemanticSegmentation.yaml"
         )
-        #############3
 
     if not os.path.exists(config_path):
         logger.warning(f"GAEMI semantic config file not found: {config_path}")
@@ -288,7 +286,7 @@ def register_all_gaemi(config_path=None):
 
         # Filter trainable classes from class_info
         class_info = get_class_info()
-        trainable_classes = [class_name for class_name in class_names 
+        trainable_classes = [class_name for class_name in class_names
                             if class_info.get(class_name, {}).get('trainable', True)]
 
         # Create ID mappings for trainable classes only
@@ -305,19 +303,36 @@ def register_all_gaemi(config_path=None):
         # Register basic metadata for common dataset names
         for split in ["train", "val", "test"]:
             dataset_name = f"gaemi_{split}"
+            
+            # Construct JSON paths based on data directory
+            target_json_path = os.path.join(data_dir_path, f"record_{split}.json")
+            semantic_json_path = os.path.join(data_dir_path, f"semantic_{split}_annotations.json")
+            
+            # Register DatasetCatalog with dummy loader (will be overridden if needed)
+            # This prevents "dataset not registered" errors during config loading
+            if dataset_name not in DatasetCatalog:
+                DatasetCatalog.register(
+                    dataset_name,
+                    lambda t=target_json_path, s=semantic_json_path: load_custom_dicts(
+                        [],  # Use all service areas by default
+                        t,
+                        s,
+                    ) if os.path.exists(t) and os.path.exists(s) else []
+                )
 
-            # Only register metadata (not DatasetCatalog for inference)
+            # Register metadata
             MetadataCatalog.get(dataset_name).set(
                 stuff_classes=trainable_classes,
                 thing_classes=trainable_classes,
-                stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,  # Semantic segmentation용
-                thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,  # Mask2Former 모델 호환용
+                stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
+                thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
                 evaluator_type="gaemi_semantic",
                 ignore_label=255,
                 image_root=data_dir_path,
+                gt_json_path=semantic_json_path,
             )
 
-            logger.info(f"Registered metadata for '{dataset_name}' with {len(trainable_classes)} trainable classes")
+            logger.info(f"Registered dataset '{dataset_name}' with {len(trainable_classes)} trainable classes")
 
     except Exception as e:
         logger.warning(f"Failed to auto-register GAEMI semantic datasets: {e}")
