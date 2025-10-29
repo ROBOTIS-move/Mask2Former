@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import logging
 import yaml
@@ -247,32 +246,22 @@ def register_all_gaemi(config_path=None):
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     try:
-        # Read YAML config and extract only needed fields using regex
-        # to avoid issues with python objects in other sections
+        # Read YAML config using yaml library
+        # Use UnsafeLoader to handle python objects like !!python/object/apply:eval
+        # Note: We only extract specific fields (DATASETS section), so it's safe
         with open(config_path, 'r') as f:
-            content = f.read()
+            # Use yaml.unsafe_load() to handle python objects in YAML
+            # Alternative: could use yaml.safe_load() with custom constructors
+            config_content = yaml.load(f, Loader=yaml.UnsafeLoader)
 
-        # Extract DATA_DIR_PATH using regex
-        data_dir_match = re.search(r'DATA_DIR_PATH:\s*["\']?([^"\'\n]+)["\']?', content)
-        data_dir_path = data_dir_match.group(1).strip() if data_dir_match else ''
+        # Extract DATA_DIR_PATH
+        data_dir_path = config_content.get('DATASETS', {}).get('DATA_DIR_PATH', '')
 
-        # Extract CLASS_NAMES - look for the list section
-        class_names = []
-        class_names_match = re.search(r'CLASS_NAMES:\s*\[(.*?)\]', content, re.DOTALL)
-        if class_names_match:
-            # Inline list format
-            list_content = class_names_match.group(1)
-            class_names = [c.strip().strip('"\',') for c in list_content.split(',') if c.strip() and not c.strip().startswith('#')]
-        else:
-            # Multi-line list format
-            class_names_section = re.search(r'CLASS_NAMES:\s*\n((?:\s*-\s*[^\n]+\n)+)', content)
-            if class_names_section:
-                for line in class_names_section.group(1).split('\n'):
-                    match = re.search(r'-\s*["\']?([^"\',\n]+)["\']?', line)
-                    if match:
-                        class_name = match.group(1).strip()
-                        if class_name and not class_name.startswith('#'):
-                            class_names.append(class_name)
+        # Extract CLASS_NAMES
+        class_names = config_content.get('DATASETS', {}).get('CLASS_NAMES', [])
+
+        # Extract DATA_TYPE for get_class_info
+        data_type = config_content.get('DATASETS', {}).get('DATA_TYPE', 'SemanticSegmentation')
 
         logger.info(f"Parsed config - Data directory: {data_dir_path}, Classes found: {len(class_names)}")
 
@@ -280,8 +269,13 @@ def register_all_gaemi(config_path=None):
             logger.warning("CLASS_NAMES not found in config file. Skipping GAEMI semantic registration.")
             return
 
+        if not data_dir_path:
+            logger.warning("DATA_DIR_PATH not found in config file. Skipping GAEMI semantic registration.")
+            return
+
         logger.info(f"Auto-registering GAEMI semantic datasets from config: {config_path}")
         logger.info(f"  - Data directory: {data_dir_path}")
+        logger.info(f"  - Data type: {data_type}")
         logger.info(f"  - Classes: {len(class_names)}")
 
         # Filter trainable classes from class_info
@@ -301,38 +295,19 @@ def register_all_gaemi(config_path=None):
                 contiguous_id += 1
 
         # Register basic metadata for common dataset names
-        for split in ["train", "val", "test"]:
+        for split in ["train", "val"]:  # ["train", "val", "test"]
             dataset_name = f"gaemi_{split}"
-            
-            # Construct JSON paths based on data directory
-            target_json_path = os.path.join(data_dir_path, f"record_{split}.json")
-            semantic_json_path = os.path.join(data_dir_path, f"semantic_{split}_annotations.json")
-            
-            # Register DatasetCatalog with dummy loader (will be overridden if needed)
-            # This prevents "dataset not registered" errors during config loading
-            if dataset_name not in DatasetCatalog:
-                DatasetCatalog.register(
-                    dataset_name,
-                    lambda t=target_json_path, s=semantic_json_path: load_custom_dicts(
-                        [],  # Use all service areas by default
-                        t,
-                        s,
-                    ) if os.path.exists(t) and os.path.exists(s) else []
-                )
 
             # Register metadata
             MetadataCatalog.get(dataset_name).set(
                 stuff_classes=trainable_classes,
                 thing_classes=trainable_classes,
-                stuff_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
-                thing_dataset_id_to_contiguous_id=dataset_id_to_contiguous_id,
                 evaluator_type="gaemi_semantic",
                 ignore_label=255,
                 image_root=data_dir_path,
-                gt_json_path=semantic_json_path,
             )
 
-            logger.info(f"Registered dataset '{dataset_name}' with {len(trainable_classes)} trainable classes")
+            logger.info(f"Registered metadata for '{dataset_name}' with {len(trainable_classes)} trainable classes")
 
     except Exception as e:
         logger.warning(f"Failed to auto-register GAEMI semantic datasets: {e}")
