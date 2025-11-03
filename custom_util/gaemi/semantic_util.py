@@ -17,6 +17,31 @@ class SemanticUtil:
 
         self._set_logger()
 
+        # Create dataset_id to contiguous_id mapping for trainable classes only
+        self.dataset_id_to_contiguous_id = self._create_id_mapping()
+
+    def _create_id_mapping(self):
+        trainable_classes = [
+            (name, info['id'])
+            for name, info in self.class_info.items()
+            if info.get('trainable', True)
+        ]
+        # Sort by dataset_id to ensure consistent mapping
+        trainable_classes.sort(key=lambda x: x[1])
+
+        dataset_id_to_contiguous_id = {}
+        contiguous_id = 1  # Start from 1 (0 is reserved for background)
+
+        for _, dataset_id in trainable_classes:
+            dataset_id_to_contiguous_id[dataset_id] = contiguous_id
+            contiguous_id += 1
+
+        self.logger.info(f"Created ID mapping for {len(dataset_id_to_contiguous_id)} trainable classes")
+        self.logger.info(f"  contiguous_id range: 1 to {contiguous_id - 1}")
+        self.logger.debug(f"  Mapping: {dataset_id_to_contiguous_id}")
+
+        return dataset_id_to_contiguous_id
+
     def _set_logger(self):
         logging.basicConfig(
             level=logging.INFO,
@@ -72,6 +97,11 @@ class SemanticUtil:
 
     def create_semantic_png(self, annotation_info, target_type='train'):
         self.logger.info(f"Creating semantic PNG files for {target_type} set...")
+        self.logger.info(f"PNG files will use contiguous_id (1 to {len(self.dataset_id_to_contiguous_id)})")
+        self.logger.info(f"Non-trainable classes will be stored as 255 (ignore label)")
+
+        skipped_labels = set()
+        non_trainable_count = 0
 
         for annotation in tqdm(annotation_info):
             json_path = annotation['json_file_name']
@@ -81,42 +111,69 @@ class SemanticUtil:
             with open(json_path, 'r', encoding='utf-8') as f:
                 json_data = json.load(f)
 
-            # Get image dimensions
+            # Get image size
             height = annotation['height']
             width = annotation['width']
 
-            # Create semantic segmentation PNG (initialized with 0)
-            semantic_map = np.zeros((height, width), dtype=np.uint8)
+            # Create Semantic segmentation PNG (initialize 255 - ignore label)
+            semantic_map = np.full((height, width), 255, dtype=np.uint8)
 
-            # Process each shape (polygon)
+            # Work each shape(polygon)
             for shape in json_data.get('shapes', []):
                 label = shape['label']
                 points = shape['points']
 
-                # Apply class_remap for DrivingAreaSegmentation type
+                # DrivingAreaSegmentation 타입일 때 class_remap 적용
                 if self.class_remap.get(self.data_type, None):
                     if label in self.class_remap[self.data_type]:
+                        original_label = label
                         label = self.class_remap[self.data_type][label]
-                        self.logger.debug(f"Remapped {shape['label']} -> {label}")
+                        self.logger.debug(f"Remapped {original_label} -> {label}")
 
-                # Find ID from class info
-                if label in self.class_info:
-                    class_id = self.class_info[label]['id']
-                else:
-                    self.logger.warning(f"Unknown label '{label}' in {json_path}, skipping...")
+                # 클래스 정보에서 ID 찾기
+                if label not in self.class_info:
+                    if label not in skipped_labels:
+                        self.logger.warning(f"Unknown label '{label}' in {json_path}, skipping...")
+                        skipped_labels.add(label)
                     continue
 
-                # Convert polygon coordinates to numpy array
+                dataset_id = self.class_info[label]['id']
+                is_trainable = self.class_info[label].get('trainable', True)
+
+                # trainable=False인 클래스는 255(ignore)로 저장
+                if not is_trainable:
+                    class_id = 255
+                    non_trainable_count += 1
+                    self.logger.debug(f"Non-trainable class '{label}' (dataset_id={dataset_id}) -> 255 (ignore)")
+                # trainable=True인 클래스는 contiguous_id로 변환
+                elif dataset_id in self.dataset_id_to_contiguous_id:
+                    class_id = self.dataset_id_to_contiguous_id[dataset_id]
+                    self.logger.debug(f"Trainable class '{label}' (dataset_id={dataset_id}) -> contiguous_id={class_id}")
+                else:
+                    # 매핑되지 않은 경우 (안전장치)
+                    class_id = 255
+                    self.logger.warning(f"Class '{label}' (dataset_id={dataset_id}) not in mapping, using 255 (ignore)")
+
+                # Polygon 좌표를 numpy array로 변환
                 pts = np.array(points, dtype=np.int32)
 
-                # Draw polygon on semantic map
+                # Polygon을 semantic map에 그리기
                 cv2.fillPoly(semantic_map, [pts], class_id)
 
-            # Create save directory
+            # 저장 디렉토리 생성
             os.makedirs(os.path.dirname(sem_seg_path), exist_ok=True)
 
-            # Save as PNG file
+            # PNG 파일로 저장
             cv2.imwrite(sem_seg_path, semantic_map)
             self.logger.debug(f"Saved semantic PNG: {sem_seg_path}")
 
+        if skipped_labels:
+            self.logger.warning(f"Skipped unknown labels: {skipped_labels}")
+        if non_trainable_count > 0:
+            self.logger.info(f"Converted {non_trainable_count} non-trainable polygons to ignore label (255)")
+
         self.logger.info(f"Semantic PNG creation completed for {target_type} set!")
+        self.logger.info(f"  - PNG values: contiguous_id [1-{len(self.dataset_id_to_contiguous_id)}] and 255 (ignore)")
+        self.logger.info(f"  - Model expects: NUM_CLASSES = {len(self.dataset_id_to_contiguous_id)}")
+
+
