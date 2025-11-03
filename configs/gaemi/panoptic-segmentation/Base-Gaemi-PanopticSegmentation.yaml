@@ -43,21 +43,6 @@ DATASETS:
   #   'speed-bump', 'terrain', 'vegetation', 'sky', 'traffic-sign', 'traffic-light-front', 'traffic-light-back',
   #   'fence', 'static',]
   # THING_CLASSES: ['pole', 'pole-group', 'pedestrian', 'vehicle', 'dynamic',]
-  remap_flag: True # 4 generation is True, 5 generation is False
-  convert_classes_mapping:
-    - ["pattern-block", "runway"]
-    - ["deck", "runway"]
-    - ["drain", "curb"]
-    - ["cement", "road"]
-    - ["asphalt", "road"]
-    - ["non-pattern-block", "terrain"]
-    - ["sand", "terrain"]
-    - ["grass", "terrain"]
-    - ["pebble", "terrain"]
-    - ["wall", "static"]
-    - ["building", "static"]
-    - ["animal", "dynamic"]
-    - ["sky", "void"]
 SOLVER:
   CHECKPOINT_PERIOD: 2000  # save a checkpoint after every this number of iterations
   IMS_PER_BATCH: 16

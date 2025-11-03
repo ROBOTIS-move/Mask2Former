@@ -82,16 +82,16 @@ class PanopticUtil:
             # Calculate area and bbox
             area, bbox = self._calculate_area_and_bbox(polygon, image_height, image_width)
 
-            # iscrowd is using only instance segmentation, default is 0 for panoptic
+            # iscrowd is used only for instance segmentation, default is 0 for panoptic
             iscrowd = 0
 
-            # Stuff 클래스: instance_id = 0 (같은 클래스는 하나의 영역)
+            # Stuff classes: instance_id = 0 (same class is one region)
             # Panoptic ID = category_id * 1000 + instance_id
             instance_id = 0
             panoptic_id = label_id * 1000 + instance_id
 
             annotation_info = {
-                'label': label,  # 디버깅용
+                'label': label,
                 "id": panoptic_id,  # Panoptic ID (category_id * 1000 + instance_id)
                 "category_id": int(label_id),  # Dataset ID (1~25)
                 'segmentation': [flatten_polygon],  # Detectron2 format: [[x1,y1,...]]
@@ -139,18 +139,18 @@ class PanopticUtil:
     
     def create_panoptic_png(self, target_type='train'):
         """
-        각 이미지에 대해 panoptic PNG 파일 생성
-        RGB 인코딩: R + G*256 + B*256^2 = panoptic_id
+        Create panoptic PNG files for each image
+        RGB encoding: R + G*256 + B*256^2 = panoptic_id
         panoptic_id = category_id * 1000 + instance_id
         
-        Stuff 클래스: 같은 클래스는 instance_id=0 (하나의 영역)
-        Thing 클래스: 같은 클래스라도 instance_id++ (개별 인스턴스 구분)
+        Stuff classes: same class has instance_id=0 (single region)
+        Thing classes: same class has instance_id++ (distinguish individual instances)
         """
         self.logger.info(f"Creating panoptic PNG files for {target_type} set...")
         
         target_paths = self._get_target_file_path(target_type)
         
-        # panoptic PNG 저장 디렉토리
+        # Directory for saving panoptic PNGs
         panoptic_dir = os.path.join(
             self.gaemi_config.get('record_path', ''),
             f'panoptic_{target_type}'
@@ -158,7 +158,7 @@ class PanopticUtil:
         os.makedirs(panoptic_dir, exist_ok=True)
         
         for img_path in tqdm(target_paths, desc=f'Creating panoptic PNGs ({target_type})'):
-            # annotation JSON 로드
+            # Load annotation JSON
             json_path = img_path.replace('images', 'labels').replace('.jpg', '.json')
             if not os.path.exists(json_path):
                 self.logger.warning(f"JSON not found: {json_path}")
@@ -172,11 +172,11 @@ class PanopticUtil:
                 self.logger.warning(f"Invalid image size in {json_path}")
                 continue
             
-            # Panoptic ID 맵 생성
+            # Create panoptic ID map
             panoptic_map = np.zeros((height, width), dtype=np.int32)
             
-            # 클래스별 instance_id 카운터 (thing 클래스용)
-            # Gaemi는 현재 모든 클래스를 stuff로 처리하므로 instance_id=0 사용
+            # Instance ID counter per class (for thing classes)
+            # Gaemi currently treats all classes as stuff, so uses instance_id=0
             class_instance_counter = {}
             
             for shape in json_data.get('shapes', []):
@@ -197,15 +197,15 @@ class PanopticUtil:
                     self.logger.warning(f'Label "{label}" has id=0 (void). Skipping.')
                     continue
                 
-                # Stuff 클래스: instance_id = 0 (같은 클래스는 하나의 영역)
-                # Thing 클래스: instance_id++ (개별 인스턴스 구분)
-                # 현재 Gaemi는 모든 클래스를 stuff로 처리
+                # Stuff classes: instance_id = 0 (same class is one region)
+                # Thing classes: instance_id++ (distinguish individual instances)
+                # Currently Gaemi treats all classes as stuff
                 instance_id = 0
                 
                 # Panoptic ID = category_id * 1000 + instance_id
                 panoptic_id = label_id * 1000 + instance_id
                 
-                # Polygon을 mask로 변환
+                # Convert polygon to mask
                 points = shape.get('points', [])
                 if len(points) < 3:
                     continue
@@ -213,7 +213,7 @@ class PanopticUtil:
                 polygon = np.array(points, dtype=np.int32)
                 cv2.fillPoly(panoptic_map, [polygon], panoptic_id)
             
-            # RGB 인코딩하여 PNG 저장
+            # Encode as RGB and save as PNG
             rgb_panoptic = self._id_to_rgb(panoptic_map)
             
             base_name = os.path.basename(img_path).replace('.jpg', '.png')
