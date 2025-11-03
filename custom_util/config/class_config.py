@@ -48,7 +48,7 @@ class_remap = {
         'drain': 'curb',
         'cement': 'road',
         'asphalt': 'road',
-        'non-pattern-block': 'terrain',
+        'non-pattern-block': 'runway',
         'sand': 'terrain',
         'grass': 'terrain',
         'pebble': 'terrain',
