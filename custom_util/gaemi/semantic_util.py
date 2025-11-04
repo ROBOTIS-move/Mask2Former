@@ -118,19 +118,19 @@ class SemanticUtil:
             # Create Semantic segmentation PNG (initialize 255 - ignore label)
             semantic_map = np.full((height, width), 255, dtype=np.uint8)
 
-            # Work each shape(polygon)
+            # Process each shape (polygon)
             for shape in json_data.get('shapes', []):
                 label = shape['label']
                 points = shape['points']
 
-                # DrivingAreaSegmentation 타입일 때 class_remap 적용
+                # Apply class_remap when data type is DrivingAreaSegmentation
                 if self.class_remap.get(self.data_type, None):
                     if label in self.class_remap[self.data_type]:
                         original_label = label
                         label = self.class_remap[self.data_type][label]
                         self.logger.debug(f"Remapped {original_label} -> {label}")
 
-                # 클래스 정보에서 ID 찾기
+                # Find ID from class information
                 if label not in self.class_info:
                     if label not in skipped_labels:
                         self.logger.warning(f"Unknown label '{label}' in {json_path}, skipping...")
@@ -140,30 +140,30 @@ class SemanticUtil:
                 dataset_id = self.class_info[label]['id']
                 is_trainable = self.class_info[label].get('trainable', True)
 
-                # trainable=False인 클래스는 255(ignore)로 저장
+                # Store non-trainable classes as 255 (ignore label)
                 if not is_trainable:
                     class_id = 255
                     non_trainable_count += 1
                     self.logger.debug(f"Non-trainable class '{label}' (dataset_id={dataset_id}) -> 255 (ignore)")
-                # trainable=True인 클래스는 contiguous_id로 변환
+                # Convert trainable classes to contiguous_id
                 elif dataset_id in self.dataset_id_to_contiguous_id:
                     class_id = self.dataset_id_to_contiguous_id[dataset_id]
                     self.logger.debug(f"Trainable class '{label}' (dataset_id={dataset_id}) -> contiguous_id={class_id}")
                 else:
-                    # 매핑되지 않은 경우 (안전장치)
+                    # For unmapped cases (safety fallback)
                     class_id = 255
                     self.logger.warning(f"Class '{label}' (dataset_id={dataset_id}) not in mapping, using 255 (ignore)")
 
-                # Polygon 좌표를 numpy array로 변환
+                # Convert polygon coordinates to numpy array
                 pts = np.array(points, dtype=np.int32)
 
-                # Polygon을 semantic map에 그리기
+                # Draw polygon on semantic map
                 cv2.fillPoly(semantic_map, [pts], class_id)
 
-            # 저장 디렉토리 생성
+            # Create save directory
             os.makedirs(os.path.dirname(sem_seg_path), exist_ok=True)
 
-            # PNG 파일로 저장
+            # Save as PNG file
             cv2.imwrite(sem_seg_path, semantic_map)
             self.logger.debug(f"Saved semantic PNG: {sem_seg_path}")
 

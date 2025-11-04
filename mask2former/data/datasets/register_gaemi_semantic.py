@@ -107,7 +107,7 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
             "image_id": item.get('image_id', loaded_count),
             "height": item['height'],
             "width": item['width'],
-            "sem_seg_file_name": item['sem_seg_file_name'],  # PNG GT 경로
+            "sem_seg_file_name": item['sem_seg_file_name'],  # PNG GT Path
         }
 
         dataset_dicts.append(record)
