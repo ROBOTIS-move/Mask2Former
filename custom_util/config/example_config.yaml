@@ -1,0 +1,11 @@
+gaemi_GT_data:
+  dataset_path: /path/to/dataset
+  service_area: service_area_name
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  record_path: /path/to/your/trained
+  # You don't need write extension. It will be added automatically.
+  record_file_name: record
+  model_train_data_path: /path/to/dataset/temp_png

@@ -40,6 +40,8 @@ from detectron2.evaluation import (
     DatasetEvaluators,
     LVISEvaluator,
     SemSegEvaluator,
+    GaemiPanopticEvaluator,
+    GaemiSemsegEvaluator,
     verify_results,
 )
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
@@ -56,6 +58,9 @@ from mask2former import (
     MaskFormerSemanticDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
+)
+from mask2former.data.datasets.register_gaemi_semantic import (
+    register_gaemi_dataset
 )
 
 
@@ -136,6 +141,14 @@ class Trainer(DefaultTrainer):
         # LVIS
         if evaluator_type == "lvis":
             return LVISEvaluator(dataset_name, output_dir=output_folder)
+        # GAEMI
+        if evaluator_type == 'gaemi_semantic':
+            # Use GaemiPanopticEvaluator for custom gaemi dataset
+            evaluator_list.append(
+                GaemiSemsegEvaluator(
+                    dataset_name
+                )
+            )
         if len(evaluator_list) == 0:
             raise NotImplementedError(
                 "no Evaluator for the dataset {} with the type {}".format(
@@ -301,12 +314,18 @@ def setup(args):
 def main(args):
     cfg = setup(args)
 
+    # Register GAEMI datasets using record JSON files
+    # cfg.DATASETS.TRAIN is a tuple like ("gaemi_train",), so we need the first element
+    if args.custom:
+        register_gaemi_dataset(cfg, cfg.DATASETS.TRAIN[0], cfg.DATASETS.TRAIN_JSON_PATH)
+        register_gaemi_dataset(cfg, cfg.DATASETS.TEST[0], cfg.DATASETS.TEST_JSON_PATH)
+
     if args.eval_only:
         model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        res = Trainer.test(cfg, model)
+        res = Trainer.test(cfg, model) # res = result
         if cfg.TEST.AUG.ENABLED:
             res.update(Trainer.test_with_TTA(cfg, model))
         if comm.is_main_process():
