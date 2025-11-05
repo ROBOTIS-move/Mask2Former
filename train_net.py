@@ -69,6 +69,39 @@ class Trainer(DefaultTrainer):
     Extension of the Trainer class adapted to MaskFormer.
     """
 
+    def resume_or_load(self, resume=True):
+        super().resume_or_load(resume)
+
+        # If resuming from checkpoint and ADD_ITER is configured
+        if resume and self.checkpointer.has_checkpoint():
+            # After super().resume_or_load(), self.start_iter is set to self.iter + 1
+            # self.iter contains the iteration from the checkpoint
+            checkpoint_iter = self.iter
+
+            # Check if ADD_ITER is configured
+            if hasattr(self.cfg.SOLVER, 'ADD_ITER') and self.cfg.SOLVER.ADD_ITER > 0:
+                # Set new max_iter = checkpoint_iteration + ADD_ITER
+                new_max_iter = checkpoint_iter + self.cfg.SOLVER.ADD_ITER
+                self.max_iter = new_max_iter
+
+                # For debugging
+                print("=" * 60)
+                print("[Resume Mode] Training configuration:")
+                print(f"  - Checkpoint iteration: {checkpoint_iter}")
+                print(f"  - ADD_ITER: {self.cfg.SOLVER.ADD_ITER}")
+                print(f"  - New training endpoint: {new_max_iter}")
+                print(f"  - Training will continue from iteration {self.start_iter} to {new_max_iter}")
+                print("=" * 60)
+            else:
+                print("[Resume Mode] ADD_ITER not configured, using default MAX_ITER")
+        else:
+            # Scratch training
+            print("=" * 60)
+            print("[Scratch Mode] Starting training from iteration 0")
+            print(f"  - MAX_ITER: {self.max_iter}")
+            print(f"  - Training will continue from 0 to {self.max_iter}")
+            print("=" * 60)
+
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         """
