@@ -14,11 +14,13 @@ MODEL:
     NORM: "SyncBN"  # use syncbn for cityscapes dataset
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  DATA_DIR_PATH: "/mnt/HDD/school_dataset"
+  DATA_DIR_PATH: "/home/hun/gaemi_ws/src/temp/park_dataset"
   TRAIN: ("gaemi_train",)
-  TRAIN_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/school/record_train.json"
+  TRAIN_JSON_PATH: "/home/hun/gaemi_ws/src/Mask2Former/custom_util/record_train.json"
   TEST: ("gaemi_val",)
-  TEST_JSON_PATH: "/root/workspace/Mask2Former/custom_util/semantic/school/record_val.json"
+  TEST_JSON_PATH: "/home/hun/gaemi_ws/src/Mask2Former/custom_util/record_val.json"
+  BENCHMARK: ("gaemi_test",)
+  BENCHMARK_JSON_PATH: "/home/hun/gaemi_ws/src/Mask2Former/custom_util/record_test.json"
   # If you want to use specific service areas, set them here.
   # Otherwise, use all areas by leaving the list empty.
   TARGET_SERVICE_AREAS: []
