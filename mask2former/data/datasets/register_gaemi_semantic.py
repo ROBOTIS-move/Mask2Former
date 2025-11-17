@@ -315,6 +315,7 @@ def register_all_gaemi(config_path=None):
 
 
 # Auto-register GAEMI semantic datasets when this module is imported
-if __name__.endswith(".register_gaemi_semantic"):
-    register_all_gaemi()
+# Disabled: This was causing conflicts when using dynamic paths in training
+# if __name__.endswith(".register_gaemi_semantic"):
+#     register_all_gaemi()
 
