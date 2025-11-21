@@ -55,6 +55,7 @@ class_remap = {
         'wall': 'static',
         'building': 'static',
         'animal': 'dynamic',
+        'sky': 'void',
     }
 }
 
