@@ -93,10 +93,7 @@ def load_custom_dicts(service_areas,
         # Validate sem_seg file actually exists
         sem_seg_gt_path = item['sem_seg_file_name']
         # Convert to absolute path if mount_path is provided and path is relative
-        if mount_path and not os.path.isabs(sem_seg_gt_path):
-            full_sem_seg_path = os.path.join(mount_path, sem_seg_gt_path)
-        else:
-            full_sem_seg_path = sem_seg_gt_path
+        full_sem_seg_path = _resolve_path(mount_path, sem_seg_gt_path)
 
         if not os.path.exists(full_sem_seg_path):
             logger.warning(
@@ -114,11 +111,7 @@ def load_custom_dicts(service_areas,
 
         # Create Detectron2 format record
         # Convert file_name to absolute path if needed
-        file_name_in_record = item['file_name']
-        if mount_path and not os.path.isabs(file_name_in_record):
-            full_file_name = os.path.join(mount_path, file_name_in_record)
-        else:
-            full_file_name = file_name_in_record
+        full_file_name = _resolve_path(mount_path, file_name)
 
         record = {
             "file_name": full_file_name,
@@ -139,6 +132,12 @@ def load_custom_dicts(service_areas,
         logger.warning(f"Skipped {missing_sem_seg_count} images (sem_seg file not found)")
 
     return dataset_dicts
+
+
+def _resolve_path(mount_path, path):
+    if mount_path and not os.path.isabs(path):
+        return os.path.join(mount_path, path)
+    return path
 
 
 def register_gaemi_dataset(cfg, name, target_json_path):
@@ -206,9 +205,7 @@ def register_gaemi_dataset(cfg, name, target_json_path):
 
     ignore_label = 255
     # Get mount_path from config (for local/cloud compatibility)
-    mount_path = ''
-    if hasattr(cfg.DATASETS, 'MOUNT_PATH'):
-        mount_path = cfg.DATASETS.MOUNT_PATH
+    mount_path = getattr(cfg.DATASETS, 'MOUNT_PATH', '')
 
     DatasetCatalog.register(
         name,
