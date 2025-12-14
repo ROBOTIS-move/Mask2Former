@@ -15,6 +15,7 @@ MODEL:
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
   DATA_DIR_PATH: "path/to/your/dataset"
+  MOUNT_PATH: "path/to/mount/path"
   TRAIN: ("gaemi_train",)
   TRAIN_JSON_PATH: "path/to/your/train_record.json"
   TEST: ("gaemi_val",)

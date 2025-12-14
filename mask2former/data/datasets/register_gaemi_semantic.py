@@ -8,18 +8,20 @@ from custom_util.config.class_config import get_class_info
 
 logger = logging.getLogger(__name__)
 
-def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
+
+def load_custom_dicts(service_areas,
+                      target_img_json_path,
+                      gt_json_path,
+                      mount_path=''):
     """
     Load dataset from semantic annotation JSON, filtered by record JSON.
     Uses sem_seg_file_name to reference existing PNG GT files.
 
     Args:
-        dataset_dir: Not used (kept for compatibility)
-        class_names: List of class names (for validation)
         service_areas: List of service areas to use (empty = use all)
         target_img_json_path: Path to record JSON (e.g., record_train.json)
-        dataset_id_to_contiguous_id: Mapping from original dataset ID to contiguous ID
-        ignore_label: Label value for non-trainable classes (default: 255)
+        gt_json_path: Path to semantic annotations JSON
+        mount_path: Base mount path for combining with relative paths
 
     Returns:
         List[dict]: Detectron2 standard dataset format
@@ -71,9 +73,9 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
 
     for item in semantic_data:
         file_name = item.get('file_name', '')
-        
+
         if not file_name:
-            logger.warning(f"Item missing 'file_name' field, skipping")
+            logger.warning("Item missing 'file_name' field, skipping")
             missing_field_count += 1
             continue
 
@@ -87,11 +89,17 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
             logger.warning(f"No sem_seg_file_name found for {file_name}, skipping")
             missing_field_count += 1
             continue
-        
+
         # Validate sem_seg file actually exists
         sem_seg_gt_path = item['sem_seg_file_name']
-        if not os.path.exists(sem_seg_gt_path):
-            logger.warning(f"Semantic segmentation file not found: {sem_seg_gt_path} (image: {file_name})")
+        # Convert to absolute path if mount_path is provided and path is relative
+        full_sem_seg_path = _resolve_path(mount_path, sem_seg_gt_path)
+
+        if not os.path.exists(full_sem_seg_path):
+            logger.warning(
+                f"Semantic segmentation file not found: "
+                f"{full_sem_seg_path} (image: {file_name})"
+            )
             missing_sem_seg_count += 1
             continue
 
@@ -102,12 +110,15 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
             continue
 
         # Create Detectron2 format record
+        # Convert file_name to absolute path if needed
+        full_file_name = _resolve_path(mount_path, file_name)
+
         record = {
-            "file_name": item['file_name'],
+            "file_name": full_file_name,
             "image_id": item.get('image_id', loaded_count),
             "height": item['height'],
             "width": item['width'],
-            "sem_seg_file_name": item['sem_seg_file_name'],  # PNG GT Path
+            "sem_seg_file_name": full_sem_seg_path,  # PNG GT Path
         }
 
         dataset_dicts.append(record)
@@ -122,31 +133,51 @@ def load_custom_dicts(service_areas, target_img_json_path, gt_json_path):
 
     return dataset_dicts
 
+
+def _resolve_path(mount_path, path):
+    if mount_path and not os.path.isabs(path):
+        return os.path.join(mount_path, path)
+    return path
+
+
 def register_gaemi_dataset(cfg, name, target_json_path):
     # 1. get class names and dataset directory from config
     # Define class names in YAML config like 'DATASETS.CLASS_NAMES: ["class1", "class2", ...]'
     try:
         class_names = cfg.DATASETS.CLASS_NAMES
     except AttributeError:
-        raise AttributeError("CLASS_NAMES not found in config! Please add `DATASETS.CLASS_NAMES` to your YAML config file.")
+        raise AttributeError(
+            "CLASS_NAMES not found in config! "
+            "Please add `DATASETS.CLASS_NAMES` to your YAML config file."
+        )
 
     dataset_dir = cfg.DATASETS.DATA_DIR_PATH
     if not dataset_dir:
-        raise ValueError("DATA_DIR_PATH not found in config! Please add `DATASETS.DATA_DIR_PATH` to your YAML config file.")
+        raise ValueError(
+            "DATA_DIR_PATH not found in config! "
+            "Please add `DATASETS.DATA_DIR_PATH` to your YAML config file."
+        )
 
     available_service_areas = cfg.DATASETS.TARGET_SERVICE_AREAS
 
     # 2. Filter trainable classes from class_info
     # Only classes with 'trainable': True will be included in training
     class_info = get_class_info()
-    trainable_classes = [class_name for class_name in class_names 
-                         if class_info.get(class_name, {}).get('trainable', True)]
-    
-    non_trainable_classes = [class_name for class_name in class_names 
-                            if not class_info.get(class_name, {}).get('trainable', True)]
-    
+    trainable_classes = [
+        class_name for class_name in class_names
+        if class_info.get(class_name, {}).get('trainable', True)
+    ]
+
+    non_trainable_classes = [
+        class_name for class_name in class_names
+        if not class_info.get(class_name, {}).get('trainable', True)
+    ]
+
     logger.info(f"Trainable classes ({len(trainable_classes)}): {trainable_classes}")
-    logger.info(f"Non-trainable classes ({len(non_trainable_classes)}): {non_trainable_classes}")
+    logger.info(
+        f"Non-trainable classes ({len(non_trainable_classes)}): "
+        f"{non_trainable_classes}"
+    )
 
     # 3. Create ID mappings for trainable classes only
     # Original dataset_id -> contiguous_id (1, 2, 3, ...)
@@ -173,12 +204,16 @@ def register_gaemi_dataset(cfg, name, target_json_path):
     gt_json_path = os.path.join(base_dir, semantic_json_name)
 
     ignore_label = 255
+    # Get mount_path from config (for local/cloud compatibility)
+    mount_path = getattr(cfg.DATASETS, 'MOUNT_PATH', '')
+
     DatasetCatalog.register(
         name,
         lambda: load_custom_dicts(
             available_service_areas,
             target_json_path,
             gt_json_path,
+            mount_path,
         )
     )
 
@@ -205,8 +240,12 @@ def register_gaemi_dataset(cfg, name, target_json_path):
         val_img_json_path=cfg.DATASETS.TEST_JSON_PATH,
         class_info=class_info,
         available_service_areas=available_service_areas,
+        mount_path=mount_path,  # For local/cloud path compatibility
     )
-    logger.info(f"Registered dataset '{name}' with {len(trainable_classes)} trainable classes (total: {len(class_names)}).")
+    logger.info(
+        f"Registered dataset '{name}' with {len(trainable_classes)} "
+        f"trainable classes (total: {len(class_names)})."
+    )
 
     # Debug: Print metadata to verify registration
     logger.info(f"Metadata for '{name}':")
@@ -229,10 +268,14 @@ def register_all_gaemi(config_path=None):
     # Determine config path
     if config_path is None:
         # Default path relative to Mask2Former directory
-        # __file__ is: .../Mask2Former/mask2former/data/datasets/register_gaemi_semantic.py
+        # __file__ is: .../Mask2Former/mask2former/data/datasets/
+        #              register_gaemi_semantic.py
         # Need to go up 4 levels: datasets -> data -> mask2former -> Mask2Former
         current_file = os.path.abspath(__file__)
-        mask2former_module_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # Mask2Former/mask2former
+        # Mask2Former/mask2former
+        mask2former_module_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(current_file))
+        )
         mask2former_root = os.path.dirname(mask2former_module_dir)  # Mask2Former
 
         config_path = os.path.join(
@@ -280,8 +323,10 @@ def register_all_gaemi(config_path=None):
 
         # Filter trainable classes from class_info
         class_info = get_class_info()
-        trainable_classes = [class_name for class_name in class_names
-                            if class_info.get(class_name, {}).get('trainable', True)]
+        trainable_classes = [
+            class_name for class_name in class_names
+            if class_info.get(class_name, {}).get('trainable', True)
+        ]
 
         # Create ID mappings for trainable classes only
         # Note: contiguous_id starts from 1 because 0 is reserved for background/ignore in the model
@@ -313,9 +358,7 @@ def register_all_gaemi(config_path=None):
         logger.warning(f"Failed to auto-register GAEMI semantic datasets: {e}")
         logger.warning("You may need to register manually in your training script.")
 
-
 # Auto-register GAEMI semantic datasets when this module is imported
 # Disabled: This was causing conflicts when using dynamic paths in training
 # if __name__.endswith(".register_gaemi_semantic"):
 #     register_all_gaemi()
-
