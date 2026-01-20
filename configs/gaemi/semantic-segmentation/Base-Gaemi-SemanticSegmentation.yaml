@@ -39,7 +39,7 @@ DATASETS:
     'traffic-sign', 'traffic-light-front', 'traffic-light-back', 'fence']
 
 SOLVER:
-  CHECKPOINT_PERIOD: 200  # save a checkpoint after every this number of iterations
+  CHECKPOINT_PERIOD: 2000  # save a checkpoint after every this number of iterations
   IMS_PER_BATCH: 16
   BASE_LR: 0.0001
   MAX_ITER: 90000
@@ -73,7 +73,7 @@ INPUT:
   FORMAT: "RGB"
   DATASET_MAPPER_NAME: "mask_former_semantic"
 TEST:
-  EVAL_PERIOD: 200
+  EVAL_PERIOD: 2000
   AUG:
     ENABLED: False
     MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
@@ -81,14 +81,14 @@ TEST:
     FLIP: True
 DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
-  NUM_WORKERS: 4
+  NUM_WORKERS: 16
 VERSION: 2
 VIS_PERIOD: 500
-OUTPUT_DIR: '/mnt/HDD/school_model'
+OUTPUT_DIR: 'path/to/your/output_dir'
 EARLY_STOP:
   ENABLED: True
-  PATIENCE: 5
+  PATIENCE: 3
   ITER_MINIMUM_RATIO: 0.7
   TARGET_INDICATOR: "sem_seg"
   TARGET_METRIC: "mIoU"
-  JSON_PATH: "/mnt/HDD/school_model"
+  JSON_PATH: "path/to/your/json_path"
